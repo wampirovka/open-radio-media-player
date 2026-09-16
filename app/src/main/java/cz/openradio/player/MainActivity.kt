@@ -62,14 +62,23 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     private var controller: MediaController? by mutableStateOf(null)
+    private var localAudioSelection by mutableStateOf<List<android.net.Uri>>(emptyList())
 
     private val localAudioPicker = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
+        uris.forEach { uri ->
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // Some document providers do not offer persistable permissions.
+            }
+        }
         localAudioSelection = uris
     }
-
-    private var localAudioSelection: List<android.net.Uri> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +91,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 RadioPlayerApp(
                     controller = controller,
+                    localAudioUris = localAudioSelection,
                     onPickLocalAudio = {
                         localAudioPicker.launch(arrayOf("audio/*"))
                     }
@@ -101,6 +111,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RadioPlayerApp(
     controller: MediaController?,
+    localAudioUris: List<android.net.Uri>,
     onPickLocalAudio: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -201,6 +212,7 @@ private fun RadioPlayerApp(
             2 -> LocalMusicScreen(
                 modifier = Modifier.padding(paddingValues),
                 controller = controller,
+                localAudioUris = localAudioUris,
                 onPickAudio = onPickLocalAudio
             )
             else -> PlaceholderScreen(Modifier.padding(paddingValues), "Nastavení", "Přehrávání, vzhled, automatické spuštění a další nastavení.")
@@ -423,13 +435,20 @@ private fun StationRow(
 private fun LocalMusicScreen(
     modifier: Modifier,
     controller: MediaController?,
+    localAudioUris: List<android.net.Uri>,
     onPickAudio: () -> Unit
 ) {
-    var tracks by remember { mutableStateOf<List<LocalTrack>>(emptyList()) }
-
-    LaunchedEffect(Unit) {
-        // The Activity picker result is kept by MainActivity. The actual local
-        // library persistence will be added after basic local playback is verified.
+    val tracks = remember(localAudioUris) {
+        localAudioUris.mapIndexed { index, uri ->
+            LocalTrack(
+                id = index.toLong(),
+                title = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${index + 1}",
+                artist = "Lokální hudba",
+                album = "",
+                durationMs = 0L,
+                contentUri = uri.toString()
+            )
+        }
     }
 
     Column(
@@ -498,7 +517,7 @@ private fun LocalMusicScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(track.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(track.artist, style = MaterialTheme.typography.bodySmall)
                             }
                             Icon(Icons.Default.PlayArrow, contentDescription = "Přehrát")
                         }
