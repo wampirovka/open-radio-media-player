@@ -1,9 +1,7 @@
 package cz.openradio.player
 
-import android.Manifest
 import android.content.ComponentName
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,7 +50,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -65,14 +62,17 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     private var controller: MediaController? by mutableStateOf(null)
-    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    private val localAudioPicker = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        localAudioSelection = uris
+    }
+
+    private var localAudioSelection: List<android.net.Uri> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
 
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
@@ -80,7 +80,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                RadioPlayerApp(controller = controller)
+                RadioPlayerApp(
+                    controller = controller,
+                    onPickLocalAudio = {
+                        localAudioPicker.launch(arrayOf("audio/*"))
+                    }
+                )
             }
         }
     }
@@ -94,7 +99,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RadioPlayerApp(controller: MediaController?) {
+private fun RadioPlayerApp(
+    controller: MediaController?,
+    onPickLocalAudio: () -> Unit
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember {
         StationRepository(AppDatabase.getInstance(context).stationDao())
@@ -190,7 +198,11 @@ private fun RadioPlayerApp(controller: MediaController?) {
                 controller = controller,
                 repository = repository
             )
-            2 -> PlaceholderScreen(Modifier.padding(paddingValues), "Hudba", "Tady přidáme lokální hudbu z telefonu a úložiště.")
+            2 -> LocalMusicScreen(
+                modifier = Modifier.padding(paddingValues),
+                controller = controller,
+                onPickAudio = onPickLocalAudio
+            )
             else -> PlaceholderScreen(Modifier.padding(paddingValues), "Nastavení", "Přehrávání, vzhled, automatické spuštění a další nastavení.")
         }
     }
@@ -403,6 +415,96 @@ private fun StationRow(
                 imageVector = Icons.Default.PlayArrow,
                 contentDescription = if (active) "Právě hraje" else "Přehrát"
             )
+        }
+    }
+}
+
+@Composable
+private fun LocalMusicScreen(
+    modifier: Modifier,
+    controller: MediaController?,
+    onPickAudio: () -> Unit
+) {
+    var tracks by remember { mutableStateOf<List<LocalTrack>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        // The Activity picker result is kept by MainActivity. The actual local
+        // library persistence will be added after basic local playback is verified.
+    }
+
+    Column(
+        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Spacer(Modifier.height(4.dp))
+        Text("Lokální hudba", style = MaterialTheme.typography.headlineSmall)
+        Text("Vyber hudební soubory uložené v telefonu.", style = MaterialTheme.typography.bodyMedium)
+
+        Surface(
+            onClick = onPickAudio,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                Text("  Přidat hudbu")
+            }
+        }
+
+        if (tracks.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Knihovna je zatím prázdná.")
+                Text("Vyber jeden nebo více audio souborů.", style = MaterialTheme.typography.bodySmall)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(tracks, key = { it.id }) { track ->
+                    Card(
+                        onClick = {
+                            controller?.let { player ->
+                                val item = MediaItem.Builder()
+                                    .setMediaId("local:${track.id}")
+                                    .setUri(track.contentUri)
+                                    .setMediaMetadata(
+                                        MediaMetadata.Builder()
+                                            .setTitle(track.title)
+                                            .setArtist(track.artist)
+                                            .setAlbumTitle(track.album)
+                                            .build()
+                                    )
+                                    .build()
+                                player.setMediaItem(item)
+                                player.prepare()
+                                player.play()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(track.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Přehrát")
+                        }
+                    }
+                }
+            }
         }
     }
 }
