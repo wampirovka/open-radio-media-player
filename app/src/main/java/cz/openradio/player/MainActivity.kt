@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
@@ -39,7 +40,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -70,53 +73,27 @@ class MainActivity : ComponentActivity() {
     private var controller: MediaController? by mutableStateOf(null)
     private var localAudioSelection by mutableStateOf<List<android.net.Uri>>(emptyList())
 
-    private val localAudioPicker = registerForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
+    private val localAudioPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         val existing = localAudioSelection.map { it.toString() }.toSet()
         val merged = localAudioSelection + uris.filterNot { it.toString() in existing }
-
         merged.forEach { uri ->
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: SecurityException) {
-                // Some document providers do not offer persistable permissions.
-            }
+            try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
         }
-
         localAudioSelection = merged
-        getSharedPreferences("local_music", MODE_PRIVATE)
-            .edit()
-            .putString("uris", merged.joinToString("\n") { it.toString() })
-            .apply()
+        getSharedPreferences("local_music", MODE_PRIVATE).edit()
+            .putString("uris", merged.joinToString("\n") { it.toString() }).apply()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        localAudioSelection = getSharedPreferences("local_music", MODE_PRIVATE)
-            .getString("uris", "")
-            ?.split('\n')
-            ?.filter { it.isNotBlank() }
-            ?.map { android.net.Uri.parse(it) }
-            ?: emptyList()
-
+        localAudioSelection = getSharedPreferences("local_music", MODE_PRIVATE).getString("uris", "")
+            ?.split('\n')?.filter { it.isNotBlank() }?.map { android.net.Uri.parse(it) } ?: emptyList()
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
         future.addListener({ controller = future.get() }, mainExecutor)
-
         setContent {
             MaterialTheme {
-                RadioPlayerApp(
-                    controller = controller,
-                    localAudioUris = localAudioSelection,
-                    onPickLocalAudio = {
-                        localAudioPicker.launch(arrayOf("audio/*"))
-                    }
-                )
+                RadioPlayerApp(controller, localAudioSelection) { localAudioPicker.launch(arrayOf("audio/*")) }
             }
         }
     }
@@ -130,33 +107,32 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RadioPlayerApp(
-    controller: MediaController?,
-    localAudioUris: List<android.net.Uri>,
-    onPickLocalAudio: () -> Unit
-) {
+private fun RadioPlayerApp(controller: MediaController?, localAudioUris: List<android.net.Uri>, onPickLocalAudio: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val repository = remember {
-        StationRepository(AppDatabase.getInstance(context).stationDao())
-    }
+    val repository = remember { StationRepository(AppDatabase.getInstance(context).stationDao()) }
+    val preferences = remember { context.getSharedPreferences("playback_settings", android.content.Context.MODE_PRIVATE) }
     var selectedTab by remember { mutableStateOf(0) }
+    var showFullPlayer by remember { mutableStateOf(false) }
     var isPlaying by remember(controller) { mutableStateOf(controller?.isPlaying == true) }
     var playbackState by remember(controller) { mutableStateOf(controller?.playbackState ?: Player.STATE_IDLE) }
     var currentName by remember(controller) { mutableStateOf(controller?.currentMediaItem?.mediaMetadata?.title?.toString()) }
+    var currentArtist by remember(controller) { mutableStateOf(controller?.currentMediaItem?.mediaMetadata?.artist?.toString() ?: "") }
+    var currentArtwork by remember(controller) { mutableStateOf(controller?.currentMediaItem?.mediaMetadata?.artworkUri) }
 
     DisposableEffect(controller) {
-        if (controller == null) {
-            onDispose { }
-        } else {
-            isPlaying = controller.isPlaying
-            playbackState = controller.playbackState
-            currentName = controller.currentMediaItem?.mediaMetadata?.title?.toString()
+        if (controller == null) onDispose { } else {
+            fun sync() {
+                isPlaying = controller.isPlaying
+                playbackState = controller.playbackState
+                currentName = controller.currentMediaItem?.mediaMetadata?.title?.toString()
+                currentArtist = controller.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
+                currentArtwork = controller.currentMediaItem?.mediaMetadata?.artworkUri
+            }
+            sync()
             val listener = object : Player.Listener {
                 override fun onIsPlayingChanged(value: Boolean) { isPlaying = value }
                 override fun onPlaybackStateChanged(state: Int) { playbackState = state }
-                override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                    currentName = item?.mediaMetadata?.title?.toString()
-                }
+                override fun onMediaItemTransition(item: MediaItem?, reason: Int) { sync() }
             }
             controller.addListener(listener)
             onDispose { controller.removeListener(listener) }
@@ -164,582 +140,240 @@ private fun RadioPlayerApp(
     }
 
     val favorites by repository.favorites.collectAsState(initial = emptyList())
+    val title = currentName ?: "Nic se nepřehrává"
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("Open Radio", style = MaterialTheme.typography.titleLarge)
-                        Text("Internet Radio & Media Player", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            )
-        },
+        topBar = { TopAppBar(title = { Column { Text("Open Radio", style = MaterialTheme.typography.titleLarge); Text("Internet Radio & Media Player", style = MaterialTheme.typography.labelSmall) } }) },
         bottomBar = {
-            Column(modifier = Modifier.navigationBarsPadding()) {
-                if (currentName != null) {
-                    MiniPlayer(
-                        name = currentName!!,
-                        isPlaying = isPlaying,
-                        playbackState = playbackState,
-                        canGoPrevious = controller?.hasPreviousMediaItem() == true,
-                        canGoNext = controller?.hasNextMediaItem() == true,
-                        onPrevious = { controller?.seekToPreviousMediaItem() },
-                        onNext = { controller?.seekToNextMediaItem() },
-                        onPlayPause = {
-                            controller?.let { if (it.isPlaying) it.pause() else it.play() }
-                        },
-                        onStop = { controller?.stop() }
-                    )
-                }
+            Column(Modifier.navigationBarsPadding()) {
+                if (currentName != null) MiniPlayer(title, isPlaying, playbackState, controller?.hasPreviousMediaItem() == true, controller?.hasNextMediaItem() == true,
+                    onPrevious = { controller?.seekToPreviousMediaItem() }, onNext = { controller?.seekToNextMediaItem() },
+                    onPlayPause = { controller?.let { if (it.isPlaying) it.pause() else it.play() } }, onStop = { controller?.stop() },
+                    onOpen = { showFullPlayer = true })
                 NavigationBar {
-                    NavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        icon = { Icon(Icons.Default.Home, contentDescription = "Rádia") },
-                        label = { Text("Rádia") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Default.FavoriteBorder, contentDescription = "Oblíbené") },
-                        label = { Text("Oblíbené") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Hudba") },
-                        label = { Text("Hudba") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = "Nastavení") },
-                        label = { Text("Nastavení") }
-                    )
+                    NavigationBarItem(selectedTab == 0, { selectedTab = 0 }, { Icon(Icons.Default.Home, "Rádia") }, label = { Text("Rádia") })
+                    NavigationBarItem(selectedTab == 1, { selectedTab = 1 }, { Icon(Icons.Default.FavoriteBorder, "Oblíbené") }, label = { Text("Oblíbené") })
+                    NavigationBarItem(selectedTab == 2, { selectedTab = 2 }, { Icon(Icons.Default.PlayArrow, "Hudba") }, label = { Text("Hudba") })
+                    NavigationBarItem(selectedTab == 3, { selectedTab = 3 }, { Icon(Icons.Default.Settings, "Nastavení") }, label = { Text("Nastavení") })
                 }
             }
         }
     ) { paddingValues ->
-        when (selectedTab) {
-            0 -> RadioHome(
-                modifier = Modifier.padding(paddingValues),
-                controller = controller,
-                repository = repository
+        if (showFullPlayer && currentName != null) {
+            FullPlayer(
+                modifier = Modifier.padding(paddingValues), controller = controller, name = title, artist = currentArtist,
+                artworkUri = currentArtwork, isPlaying = isPlaying, playbackState = playbackState,
+                canGoPrevious = controller?.hasPreviousMediaItem() == true, canGoNext = controller?.hasNextMediaItem() == true,
+                onClose = { showFullPlayer = false }, onPrevious = { controller?.seekToPreviousMediaItem() },
+                onNext = { controller?.seekToNextMediaItem() }, onPlayPause = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
+                onStop = { controller?.stop(); showFullPlayer = false }
             )
-            1 -> FavoritesScreen(
-                modifier = Modifier.padding(paddingValues),
-                favorites = favorites,
-                controller = controller,
-                repository = repository
-            )
-            2 -> LocalMusicScreen(
-                modifier = Modifier.padding(paddingValues),
-                controller = controller,
-                localAudioUris = localAudioUris,
-                onPickAudio = onPickLocalAudio
-            )
-            else -> PlaceholderScreen(Modifier.padding(paddingValues), "Nastavení", "Přehrávání, vzhled, automatické spuštění a další nastavení.")
+        } else when (selectedTab) {
+            0 -> RadioHome(Modifier.padding(paddingValues), controller, repository)
+            1 -> FavoritesScreen(Modifier.padding(paddingValues), favorites, controller, repository)
+            2 -> LocalMusicScreen(Modifier.padding(paddingValues), controller, localAudioUris, onPickLocalAudio)
+            else -> SettingsScreen(Modifier.padding(paddingValues), preferences)
         }
     }
 }
 
 @Composable
-private fun RadioHome(
-    modifier: Modifier,
-    controller: MediaController?,
-    repository: StationRepository
+private fun FullPlayer(
+    modifier: Modifier, controller: MediaController?, name: String, artist: String, artworkUri: android.net.Uri?, isPlaying: Boolean,
+    playbackState: Int, canGoPrevious: Boolean, canGoNext: Boolean, onClose: () -> Unit, onPrevious: () -> Unit,
+    onNext: () -> Unit, onPlayPause: () -> Unit, onStop: () -> Unit
 ) {
+    Column(modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Zavřít") }
+            Text("Přehrávač", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            Spacer(Modifier.width(48.dp))
+        }
+        Spacer(Modifier.height(32.dp))
+        if (artworkUri != null) {
+            coil.compose.AsyncImage(model = artworkUri, contentDescription = null, modifier = Modifier.width(240.dp).height(240.dp))
+        } else {
+            Surface(Modifier.width(240.dp).height(240.dp), shape = MaterialTheme.shapes.extraLarge, tonalElevation = 4.dp) {
+                BoxPlaceholder()
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+        Text(name, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (artist.isNotBlank()) Text(artist, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        Text(when (playbackState) { Player.STATE_BUFFERING -> "Připojování…"; Player.STATE_READY -> if (isPlaying) "Hraje" else "Pozastaveno"; Player.STATE_ENDED -> "Konec"; else -> "Připraveno" }, style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onPrevious, enabled = canGoPrevious) { Icon(Icons.Default.SkipPrevious, "Předchozí") }
+            IconButton(onClick = onPlayPause) { Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Přehrát / pozastavit") }
+            IconButton(onClick = onNext, enabled = canGoNext) { Icon(Icons.Default.SkipNext, "Další") }
+        }
+        Spacer(Modifier.height(16.dp))
+        Surface(onClick = onStop, shape = MaterialTheme.shapes.medium, tonalElevation = 2.dp) { Text("Zastavit", Modifier.padding(horizontal = 28.dp, vertical = 12.dp)) }
+    }
+}
+
+@Composable
+private fun BoxPlaceholder() {
+    BoxPlaceholderContent()
+}
+
+@Composable
+private fun BoxPlaceholderContent() {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(Icons.Default.PlayArrow, null)
+        Text("Open Radio", style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun RadioHome(modifier: Modifier, controller: MediaController?, repository: StationRepository) {
     var searchText by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val favorites by repository.favorites.collectAsState(initial = emptyList())
-
-    val stationsFlow = remember(searchText) {
-        if (searchText.isBlank()) repository.stations else repository.search(searchText.trim())
-    }
+    val stationsFlow = remember(searchText) { if (searchText.isBlank()) repository.stations else repository.search(searchText.trim()) }
     val stations by stationsFlow.collectAsState(initial = emptyList())
-
     suspend fun refreshStations(query: String) {
-        loading = true
-        errorText = null
-        try {
-            val result = withContext(Dispatchers.IO) {
-                if (query.isBlank()) RadioBrowserApi.loadCzechStations() else RadioBrowserApi.searchStations(query)
-            }
-            repository.syncStations(result)
-        } catch (_: Exception) {
-            errorText = "Nepodařilo se aktualizovat stanice. Zobrazuji uložená data."
-        } finally {
-            loading = false
-        }
+        loading = true; errorText = null
+        try { repository.syncStations(withContext(Dispatchers.IO) { if (query.isBlank()) RadioBrowserApi.loadCzechStations() else RadioBrowserApi.searchStations(query) }) }
+        catch (_: Exception) { errorText = "Nepodařilo se aktualizovat stanice. Zobrazuji uložená data." }
+        finally { loading = false }
     }
-
-    LaunchedEffect(Unit) {
-        repository.syncStations(listOf(DefaultStations.fajnRock))
-        refreshStations("")
-    }
-
-    Column(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    LaunchedEffect(Unit) { repository.syncStations(listOf(DefaultStations.fajnRock)); refreshStations("") }
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Spacer(Modifier.height(4.dp))
-
         if (favorites.isNotEmpty()) {
             Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(favorites, key = { it.id }) { station ->
-                    FavoriteStationCard(
-                        station = station,
-                        controller = controller,
-                        onFavorite = { scope.launch { repository.toggleFavorite(station) } }
-                    )
-                }
-            }
+            LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(favorites, key = { it.id }) { station -> FavoriteStationCard(station, controller) { scope.launch { repository.toggleFavorite(station) } } } }
         }
-
         Text("Objev rádia", style = MaterialTheme.typography.headlineSmall)
         Text("Stanice se ukládají do zařízení a oblíbené zůstávají i offline.", style = MaterialTheme.typography.bodyMedium)
-
-        OutlinedTextField(
-            value = searchText,
-            onValueChange = { searchText = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            label = { Text("Hledat rádio") },
-            placeholder = { Text("Rock, Fajn, Radio…") }
-        )
-
+        OutlinedTextField(searchText, { searchText = it }, Modifier.fillMaxWidth(), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) }, label = { Text("Hledat rádio") }, placeholder = { Text("Rock, Fajn, Radio…") })
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Surface(
-                onClick = { scope.launch { refreshStations(searchText) } },
-                modifier = Modifier.weight(1f),
-                shape = MaterialTheme.shapes.medium,
-                tonalElevation = 2.dp
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                    Text("  Hledat")
-                }
-            }
-            Surface(
-                onClick = {
-                    searchText = ""
-                    scope.launch { refreshStations("") }
-                },
-                modifier = Modifier.weight(1f),
-                shape = MaterialTheme.shapes.medium,
-                tonalElevation = 2.dp
-            ) {
-                Text("Česká rádia", modifier = Modifier.fillMaxWidth().padding(12.dp), textAlign = TextAlign.Center)
-            }
+            Surface(onClick = { scope.launch { refreshStations(searchText) } }, Modifier.weight(1f), shape = MaterialTheme.shapes.medium, tonalElevation = 2.dp) { Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Search, null); Text("  Hledat") } }
+            Surface(onClick = { searchText = ""; scope.launch { refreshStations("") } }, Modifier.weight(1f), shape = MaterialTheme.shapes.medium, tonalElevation = 2.dp) { Text("Česká rádia", Modifier.fillMaxWidth().padding(12.dp), textAlign = TextAlign.Center) }
         }
-
-        when {
-            loading -> Text("Aktualizuji stanice…")
-            errorText != null -> Text(errorText!!)
-            else -> Text("${stations.size} uložených stanic", style = MaterialTheme.typography.labelMedium)
-        }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(stations, key = { it.id }) { station ->
-                StationRow(
-                    station = station,
-                    controller = controller,
-                    onFavorite = { scope.launch { repository.toggleFavorite(station) } }
-                )
-            }
-        }
+        when { loading -> Text("Aktualizuji stanice…"); errorText != null -> Text(errorText!!); else -> Text("${stations.size} uložených stanic", style = MaterialTheme.typography.labelMedium) }
+        LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(stations, key = { it.id }) { station -> StationRow(station, controller) { scope.launch { repository.toggleFavorite(station) } } } }
     }
 }
 
 @Composable
-private fun FavoriteStationCard(
-    station: Station,
-    controller: MediaController?,
-    onFavorite: () -> Unit
-) {
+private fun FavoriteStationCard(station: Station, controller: MediaController?, onFavorite: () -> Unit) {
     val active = controller?.currentMediaItem?.mediaId == station.id
-
-    Card(
-        onClick = {
-            controller?.let { player ->
-                if (!station.id.startsWith("custom-")) {
-                    RadioBrowserApi.registerClick(station.id)
-                }
-                val item = MediaItem.Builder()
-                    .setMediaId(station.id)
-                    .setUri(station.streamUrl)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(station.name)
-                            .setArtist("Internet Radio")
-                            .build()
-                    )
-                    .build()
-                if (player.currentMediaItem?.mediaId != station.id) {
-                    player.setMediaItem(item)
-                    player.prepare()
-                }
-                player.play()
-            }
-        },
-        modifier = Modifier.width(156.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            StationLogo(station = station)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                station.name,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                if (active) "▶ Hraje" else "▶ Přehrát",
-                style = MaterialTheme.typography.labelSmall
-            )
-            IconButton(onClick = onFavorite) {
-                Icon(Icons.Default.Favorite, contentDescription = "Odebrat z oblíbených")
-            }
+    Card(onClick = { playStation(controller, station) }, Modifier.width(156.dp)) {
+        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            StationLogo(station); Spacer(Modifier.height(8.dp)); Text(station.name, MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(if (active) "▶ Hraje" else "▶ Přehrát", style = MaterialTheme.typography.labelSmall); IconButton(onClick = onFavorite) { Icon(Icons.Default.Favorite, "Odebrat z oblíbených") }
         }
     }
 }
 
 @Composable
-private fun FavoritesScreen(
-    modifier: Modifier,
-    favorites: List<Station>,
-    controller: MediaController?,
-    repository: StationRepository
-) {
+private fun FavoritesScreen(modifier: Modifier, favorites: List<Station>, controller: MediaController?, repository: StationRepository) {
     val scope = rememberCoroutineScope()
-
-    Column(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Spacer(Modifier.height(4.dp))
-        Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
-        Text("Uloženo v telefonu", style = MaterialTheme.typography.bodyMedium)
-
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Spacer(Modifier.height(4.dp)); Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall); Text("Uloženo v telefonu", style = MaterialTheme.typography.bodyMedium)
         if (favorites.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(Icons.Default.FavoriteBorder, contentDescription = null)
-                Spacer(Modifier.height(8.dp))
-                Text("Zatím nemáš žádné oblíbené rádio.")
-                Text("Klepni na srdce u stanice.", style = MaterialTheme.typography.bodySmall)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(favorites, key = { it.id }) { station ->
-                    StationRow(
-                        station = station,
-                        controller = controller,
-                        onFavorite = { scope.launch { repository.toggleFavorite(station) } }
-                    )
-                }
-            }
-        }
+            Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.FavoriteBorder, null); Spacer(Modifier.height(8.dp)); Text("Zatím nemáš žádné oblíbené rádio."); Text("Klepni na srdce u stanice.", style = MaterialTheme.typography.bodySmall) }
+        } else LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(favorites, key = { it.id }) { station -> StationRow(station, controller) { scope.launch { repository.toggleFavorite(station) } } } }
     }
 }
 
 @Composable
-private fun StationRow(
-    station: Station,
-    controller: MediaController?,
-    onFavorite: () -> Unit
-) {
-    val currentId = controller?.currentMediaItem?.mediaId
-    val active = currentId == station.id
-
-    Card(
-        onClick = {
-            controller?.let { player ->
-                if (!station.id.startsWith("custom-")) {
-                    RadioBrowserApi.registerClick(station.id)
-                }
-                val item = MediaItem.Builder()
-                    .setMediaId(station.id)
-                    .setUri(station.streamUrl)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(station.name)
-                            .setArtist("Internet Radio")
-                            .build()
-                    )
-                    .build()
-                if (player.currentMediaItem?.mediaId != station.id) {
-                    player.setMediaItem(item)
-                    player.prepare()
-                }
-                player.play()
-            }
-        },
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StationLogo(station = station)
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = station.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = if (active) "▶ Právě hraje" else "Internet Radio",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            IconButton(onClick = onFavorite) {
-                Icon(
-                    imageVector = if (station.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = if (station.isFavorite) "Odebrat z oblíbených" else "Přidat do oblíbených"
-                )
-            }
-            Icon(
-                imageVector = if (active) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (active) "Právě hraje" else "Přehrát"
-            )
+private fun StationRow(station: Station, controller: MediaController?, onFavorite: () -> Unit) {
+    val active = controller?.currentMediaItem?.mediaId == station.id
+    Card(onClick = { playStation(controller, station) }, Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            StationLogo(station); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(station.name, MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(if (active) "▶ Právě hraje" else "Internet Radio", MaterialTheme.typography.bodySmall) }
+            IconButton(onClick = onFavorite) { Icon(if (station.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (station.isFavorite) "Odebrat z oblíbených" else "Přidat do oblíbených") }
+            Icon(if (active) Icons.Default.Pause else Icons.Default.PlayArrow, if (active) "Právě hraje" else "Přehrát")
         }
     }
 }
 
-private suspend fun readLocalTrack(uri: android.net.Uri, context: android.content.Context, fallbackIndex: Int): LocalTrack =
-    withContext(Dispatchers.IO) {
-        var retriever: MediaMetadataRetriever? = null
-        try {
-            retriever = MediaMetadataRetriever()
-            retriever.setDataSource(context, uri)
-            val fallbackTitle = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}"
-            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                ?.takeIf { it.isNotBlank() }
-                ?: fallbackTitle
-            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                ?.takeIf { it.isNotBlank() }
-                ?: "Lokální hudba"
-            val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                ?: ""
-            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                ?.toLongOrNull()
-                ?: 0L
-
-            LocalTrack(
-                id = uri.toString().hashCode().toLong(),
-                title = title,
-                artist = artist,
-                album = album,
-                durationMs = duration,
-                contentUri = uri.toString()
-            )
-        } catch (_: Exception) {
-            LocalTrack(
-                id = uri.toString().hashCode().toLong(),
-                title = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}",
-                artist = "Lokální hudba",
-                album = "",
-                durationMs = 0L,
-                contentUri = uri.toString()
-            )
-        } finally {
-            retriever?.release()
-        }
+private fun playStation(controller: MediaController?, station: Station) {
+    controller?.let { player ->
+        if (!station.id.startsWith("custom-")) RadioBrowserApi.registerClick(station.id)
+        val item = MediaItem.Builder().setMediaId(station.id).setUri(station.streamUrl).setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtist("Internet Radio").setArtworkUri(station.logoUrl?.let { android.net.Uri.parse(it) }).build()).build()
+        if (player.currentMediaItem?.mediaId != station.id) { player.setMediaItem(item); player.prepare() }
+        player.play()
     }
+}
+
+private suspend fun readLocalTrack(uri: android.net.Uri, context: android.content.Context, fallbackIndex: Int): LocalTrack = withContext(Dispatchers.IO) {
+    var retriever: MediaMetadataRetriever? = null
+    try {
+        retriever = MediaMetadataRetriever(); retriever.setDataSource(context, uri)
+        val fallbackTitle = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}"
+        LocalTrack(uri.toString().hashCode().toLong(), retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.takeIf { it.isNotBlank() } ?: fallbackTitle, retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.takeIf { it.isNotBlank() } ?: "Lokální hudba", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L, uri.toString())
+    } catch (_: Exception) {
+        LocalTrack(uri.toString().hashCode().toLong(), uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}", "Lokální hudba", "", 0L, uri.toString())
+    } finally { retriever?.release() }
+}
 
 @Composable
-private fun LocalMusicScreen(
-    modifier: Modifier,
-    controller: MediaController?,
-    localAudioUris: List<android.net.Uri>,
-    onPickAudio: () -> Unit
-) {
+private fun LocalMusicScreen(modifier: Modifier, controller: MediaController?, localAudioUris: List<android.net.Uri>, onPickAudio: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var tracks by remember(localAudioUris) { mutableStateOf<List<LocalTrack>>(emptyList()) }
     var loading by remember(localAudioUris) { mutableStateOf(localAudioUris.isNotEmpty()) }
-
-    LaunchedEffect(localAudioUris) {
-        loading = localAudioUris.isNotEmpty()
-        tracks = localAudioUris.mapIndexed { index, uri ->
-            readLocalTrack(uri, context, index)
-        }
-        loading = false
-    }
-
-    Column(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Spacer(Modifier.height(4.dp))
-        Text("Lokální hudba", style = MaterialTheme.typography.headlineSmall)
-        Text("Vyber hudební soubory uložené v telefonu.", style = MaterialTheme.typography.bodyMedium)
-
-        Surface(
-            onClick = onPickAudio,
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            tonalElevation = 2.dp
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Text("  Přidat hudbu")
-            }
-        }
-
+    LaunchedEffect(localAudioUris) { loading = localAudioUris.isNotEmpty(); tracks = localAudioUris.mapIndexed { index, uri -> readLocalTrack(uri, context, index) }; loading = false }
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Spacer(Modifier.height(4.dp)); Text("Lokální hudba", style = MaterialTheme.typography.headlineSmall); Text("Vyber hudební soubory uložené v telefonu.", style = MaterialTheme.typography.bodyMedium)
+        Surface(onClick = onPickAudio, Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, tonalElevation = 2.dp) { Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.PlayArrow, null); Text("  Přidat hudbu") } }
         when {
             loading -> Text("Načítám metadata skladeb…")
-            tracks.isEmpty() -> Column(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text("Knihovna je zatím prázdná.")
-                Text("Vyber jeden nebo více audio souborů.", style = MaterialTheme.typography.bodySmall)
-            }
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(tracks, key = { it.id }) { track ->
-                    val currentId = controller?.currentMediaItem?.mediaId
-                    val active = currentId == "local:${track.id}"
-                    Card(
-                        onClick = {
-                            controller?.let { player ->
-                                val items = tracks.map { localTrack ->
-                                    MediaItem.Builder()
-                                        .setMediaId("local:${localTrack.id}")
-                                        .setUri(localTrack.contentUri)
-                                        .setMediaMetadata(
-                                            MediaMetadata.Builder()
-                                                .setTitle(localTrack.title)
-                                                .setArtist(localTrack.artist)
-                                                .setAlbumTitle(localTrack.album)
-                                                .build()
-                                        )
-                                        .build()
-                                }
-                                val startIndex = tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                player.setMediaItems(items, startIndex, 0L)
-                                player.prepare()
-                                player.play()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(track.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    text = if (track.album.isBlank()) track.artist else "${track.artist} • ${track.album}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Icon(
-                                if (active) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (active) "Právě hraje" else "Přehrát"
-                            )
-                        }
+            tracks.isEmpty() -> Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Text("Knihovna je zatím prázdná."); Text("Vyber jeden nebo více audio souborů.", style = MaterialTheme.typography.bodySmall) }
+            else -> LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(tracks, key = { it.id }) { track ->
+                val active = controller?.currentMediaItem?.mediaId == "local:${track.id}"
+                Card(onClick = {
+                    controller?.let { player ->
+                        val items = tracks.map { localTrack -> MediaItem.Builder().setMediaId("local:${localTrack.id}").setUri(localTrack.contentUri).setMediaMetadata(MediaMetadata.Builder().setTitle(localTrack.title).setArtist(localTrack.artist).setAlbumTitle(localTrack.album).build()).build() }
+                        player.setMediaItems(items, tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0), 0L); player.prepare(); player.play()
                     }
-                }
-            }
+                }, Modifier.fillMaxWidth()) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(track.title, MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(if (track.album.isBlank()) track.artist else "${track.artist} • ${track.album}", MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Icon(if (active) Icons.Default.Pause else Icons.Default.PlayArrow, if (active) "Právě hraje" else "Přehrát") } }
+            } }
         }
     }
 }
 
 @Composable
-private fun MiniPlayer(
-    name: String,
-    isPlaying: Boolean,
-    playbackState: Int,
-    canGoPrevious: Boolean,
-    canGoNext: Boolean,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onPlayPause: () -> Unit,
-    onStop: () -> Unit
-) {
-    Surface(tonalElevation = 4.dp) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onPrevious, enabled = canGoPrevious) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "Předchozí")
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    when {
-                        isPlaying -> "Hraje"
-                        playbackState == Player.STATE_BUFFERING -> "Připojování…"
-                        else -> "Pozastaveno"
-                    },
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-            IconButton(onClick = onPlayPause) {
-                Icon(
-                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "Přehrát / pozastavit"
-                )
-            }
-            IconButton(onClick = onNext, enabled = canGoNext) {
-                Icon(Icons.Default.SkipNext, contentDescription = "Další")
-            }
-            IconButton(onClick = onStop) {
-                Text("■", style = MaterialTheme.typography.titleMedium)
-            }
+private fun MiniPlayer(name: String, isPlaying: Boolean, playbackState: Int, canGoPrevious: Boolean, canGoNext: Boolean, onPrevious: () -> Unit, onNext: () -> Unit, onPlayPause: () -> Unit, onStop: () -> Unit, onOpen: () -> Unit) {
+    Surface(onClick = onOpen, tonalElevation = 4.dp) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onPrevious, enabled = canGoPrevious) { Icon(Icons.Default.SkipPrevious, "Předchozí") }
+            Column(Modifier.weight(1f)) { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text(when { isPlaying -> "Hraje"; playbackState == Player.STATE_BUFFERING -> "Připojování…"; else -> "Pozastaveno" }, style = MaterialTheme.typography.labelSmall) }
+            IconButton(onClick = onPlayPause) { Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Přehrát / pozastavit") }
+            IconButton(onClick = onNext, enabled = canGoNext) { Icon(Icons.Default.SkipNext, "Další") }
+            IconButton(onClick = onStop) { Text("■", style = MaterialTheme.typography.titleMedium) }
         }
     }
 }
 
 @Composable
-private fun PlaceholderScreen(modifier: Modifier, title: String, text: String) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(8.dp))
-        Text(text, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+private fun SettingsScreen(modifier: Modifier, preferences: android.content.SharedPreferences) {
+    var autoStart by remember { mutableStateOf(preferences.getBoolean("auto_start", false)) }
+    var reconnect by remember { mutableStateOf(preferences.getBoolean("reconnect", true)) }
+    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Nastavení", style = MaterialTheme.typography.headlineSmall)
+        Text("Přehrávání", style = MaterialTheme.typography.titleMedium)
+        SettingSwitch("Spustit poslední rádio při otevření aplikace", "Přehrávání začne pouze při otevření aplikace, nikdy samo po startu telefonu.", autoStart) {
+            autoStart = it; preferences.edit().putBoolean("auto_start", it).apply()
+        }
+        SettingSwitch("Automaticky obnovit síťové rádio", "Při krátkém výpadku se přehrávač pokusí znovu připojit.", reconnect) {
+            reconnect = it; preferences.edit().putBoolean("reconnect", it).apply()
+        }
+        Text("Aplikace", style = MaterialTheme.typography.titleMedium)
+        Text("Open Radio & Media Player", style = MaterialTheme.typography.bodyMedium)
+        Text("Přehrávání rádia i lokální hudby běží přes Media3.", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun SettingSwitch(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.bodyLarge); Text(description, style = MaterialTheme.typography.bodySmall) }
+        Switch(checked, onCheckedChange)
     }
 }
