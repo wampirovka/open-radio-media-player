@@ -5,7 +5,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="Open Radio & Media Player"
+        android:label="Open Radio &amp; Media Player"
         android:supportsRtl="true"
         android:theme="@style/Theme.OpenRadio">
 
