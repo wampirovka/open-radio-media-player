@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -253,7 +254,6 @@ private fun RadioHome(
     var searchText by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
-    var showAddStationDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val favorites by repository.favorites.collectAsState(initial = emptyList())
 
@@ -282,39 +282,14 @@ private fun RadioHome(
         refreshStations("")
     }
 
-    if (showAddStationDialog) {
-        AddStationDialog(
-            onDismiss = { showAddStationDialog = false },
-            onSave = { name, streamUrl, logoUrl ->
-                scope.launch {
-                    val stationId = "custom-${streamUrl.hashCode()}"
-                    repository.syncStations(
-                        listOf(
-                            Station(
-                                id = stationId,
-                                name = name,
-                                streamUrl = streamUrl,
-                                logoUrl = logoUrl
-                            )
-                        )
-                    )
-                    showAddStationDialog = false
-                    searchText = ""
-                }
-            }
-        )
-    }
-
     Column(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Spacer(Modifier.height(4.dp))
 
-        Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
-        if (favorites.isEmpty()) {
-            Text("Zatím žádná. Přidej rádio do oblíbených klepnutím na srdce.", style = MaterialTheme.typography.bodySmall)
-        } else {
+        if (favorites.isNotEmpty()) {
+            Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -371,19 +346,6 @@ private fun RadioHome(
             }
         }
 
-        Surface(
-            onClick = { showAddStationDialog = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            tonalElevation = 2.dp
-        ) {
-            Text(
-                "＋  Přidat vlastní rádio",
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                textAlign = TextAlign.Center
-            )
-        }
-
         when {
             loading -> Text("Aktualizuji stanice…")
             errorText != null -> Text(errorText!!)
@@ -416,7 +378,9 @@ private fun FavoriteStationCard(
     Card(
         onClick = {
             controller?.let { player ->
-                RadioBrowserApi.registerClick(station.id)
+                if (!station.id.startsWith("custom-")) {
+                    RadioBrowserApi.registerClick(station.id)
+                }
                 val item = MediaItem.Builder()
                     .setMediaId(station.id)
                     .setUri(station.streamUrl)
@@ -434,12 +398,14 @@ private fun FavoriteStationCard(
                 player.play()
             }
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.width(156.dp)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            StationLogo(station = station)
+            Spacer(Modifier.height(8.dp))
             Text(
                 station.name,
                 style = MaterialTheme.typography.titleSmall,
@@ -514,7 +480,9 @@ private fun StationRow(
     Card(
         onClick = {
             controller?.let { player ->
-                RadioBrowserApi.registerClick(station.id)
+                if (!station.id.startsWith("custom-")) {
+                    RadioBrowserApi.registerClick(station.id)
+                }
                 val item = MediaItem.Builder()
                     .setMediaId(station.id)
                     .setUri(station.streamUrl)
@@ -535,9 +503,11 @@ private fun StationRow(
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            StationLogo(station = station)
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = station.name,
@@ -557,7 +527,7 @@ private fun StationRow(
                 )
             }
             Icon(
-                imageVector = Icons.Default.PlayArrow,
+                imageVector = if (active) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = if (active) "Právě hraje" else "Přehrát"
             )
         }
