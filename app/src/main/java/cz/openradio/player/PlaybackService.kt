@@ -4,10 +4,15 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import java.io.IOException
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -19,17 +24,44 @@ class PlaybackService : MediaSessionService() {
 
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            scheduleReconnect()
+            if (isNetworkError(error)) {
+                scheduleReconnect()
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) {
+                reconnectAttempt = 0
+                reconnectHandler.removeCallbacksAndMessages(null)
+            }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
 
-        val player = ExoPlayer.Builder(this).build().apply {
-            setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
-            addListener(playerListener)
-        }
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                30_000,
+                120_000,
+                2_500,
+                5_000
+            )
+            .build()
+
+        val loadErrorPolicy = DefaultLoadErrorHandlingPolicy(6)
+
+        val mediaSourceFactory = DefaultMediaSourceFactory(this)
+            .setLoadErrorHandlingPolicy(loadErrorPolicy)
+
+        val player = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build()
+            .apply {
+                setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
+                addListener(playerListener)
+            }
 
         val sessionActivity = PendingIntent.getActivity(
             this,
@@ -43,19 +75,30 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
+    private fun isNetworkError(error: androidx.media3.common.PlaybackException): Boolean {
+        var cause: Throwable? = error.cause
+        while (cause != null) {
+            if (cause is HttpDataSource.HttpDataSourceException || cause is IOException) {
+                return true
+            }
+            cause = cause.cause
+        }
+        return false
+    }
+
     private fun scheduleReconnect() {
         val player = mediaSession?.player ?: return
 
-        // If the user paused or stopped playback, do not resurrect the radio.
+        // Never restart playback after an intentional pause or stop.
         if (!player.playWhenReady || player.currentMediaItem == null) return
 
         reconnectHandler.removeCallbacksAndMessages(null)
 
         val delayMs = when (reconnectAttempt) {
-            0 -> 2_000L
-            1 -> 5_000L
-            2 -> 10_000L
-            else -> 30_000L
+            0 -> 10_000L
+            1 -> 20_000L
+            2 -> 30_000L
+            else -> 60_000L
         }
         reconnectAttempt++
 
