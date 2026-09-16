@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
@@ -40,6 +41,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -92,6 +95,10 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RadioPlayerApp(controller: MediaController?) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val repository = remember {
+        StationRepository(AppDatabase.getInstance(context).stationDao())
+    }
     var selectedTab by remember { mutableStateOf(0) }
     var isPlaying by remember(controller) { mutableStateOf(controller?.isPlaying == true) }
     var playbackState by remember(controller) { mutableStateOf(controller?.playbackState ?: Player.STATE_IDLE) }
@@ -115,6 +122,8 @@ private fun RadioPlayerApp(controller: MediaController?) {
             onDispose { controller.removeListener(listener) }
         }
     }
+
+    val favorites by repository.favorites.collectAsState(initial = emptyList())
 
     Scaffold(
         topBar = {
@@ -172,9 +181,15 @@ private fun RadioPlayerApp(controller: MediaController?) {
         when (selectedTab) {
             0 -> RadioHome(
                 modifier = Modifier.padding(paddingValues),
-                controller = controller
+                controller = controller,
+                repository = repository
             )
-            1 -> PlaceholderScreen(Modifier.padding(paddingValues), "Oblíbené", "Tady budou tvoje oblíbená rádia.")
+            1 -> FavoritesScreen(
+                modifier = Modifier.padding(paddingValues),
+                favorites = favorites,
+                controller = controller,
+                repository = repository
+            )
             2 -> PlaceholderScreen(Modifier.padding(paddingValues), "Hudba", "Tady přidáme lokální hudbu z telefonu a úložiště.")
             else -> PlaceholderScreen(Modifier.padding(paddingValues), "Nastavení", "Přehrávání, vzhled, automatické spuštění a další nastavení.")
         }
@@ -182,28 +197,40 @@ private fun RadioPlayerApp(controller: MediaController?) {
 }
 
 @Composable
-private fun RadioHome(modifier: Modifier, controller: MediaController?) {
-    var stations by remember { mutableStateOf<List<Station>>(emptyList()) }
+private fun RadioHome(
+    modifier: Modifier,
+    controller: MediaController?,
+    repository: StationRepository
+) {
     var searchText by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    suspend fun loadStations(query: String) {
+    val stationsFlow = remember(searchText) {
+        if (searchText.isBlank()) repository.stations else repository.search(searchText.trim())
+    }
+    val stations by stationsFlow.collectAsState(initial = emptyList())
+
+    suspend fun refreshStations(query: String) {
         loading = true
         errorText = null
         try {
-            stations = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 if (query.isBlank()) RadioBrowserApi.loadCzechStations() else RadioBrowserApi.searchStations(query)
             }
+            repository.syncStations(result)
         } catch (_: Exception) {
-            errorText = "Nepodařilo se načíst stanice."
+            errorText = "Nepodařilo se aktualizovat stanice. Zobrazuji uložená data."
         } finally {
             loading = false
         }
     }
 
-    LaunchedEffect(Unit) { loadStations("") }
+    LaunchedEffect(Unit) {
+        repository.syncStations(listOf(DefaultStations.fajnRock))
+        refreshStations("")
+    }
 
     Column(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -211,7 +238,7 @@ private fun RadioHome(modifier: Modifier, controller: MediaController?) {
     ) {
         Spacer(Modifier.height(4.dp))
         Text("Objev rádia", style = MaterialTheme.typography.headlineSmall)
-        Text("České stanice a hledání podle názvu", style = MaterialTheme.typography.bodyMedium)
+        Text("Stanice se ukládají do zařízení a oblíbené zůstávají i offline.", style = MaterialTheme.typography.bodyMedium)
 
         OutlinedTextField(
             value = searchText,
@@ -225,7 +252,7 @@ private fun RadioHome(modifier: Modifier, controller: MediaController?) {
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Surface(
-                onClick = { scope.launch { loadStations(searchText) } },
+                onClick = { scope.launch { refreshStations(searchText) } },
                 modifier = Modifier.weight(1f),
                 shape = MaterialTheme.shapes.medium,
                 tonalElevation = 2.dp
@@ -242,20 +269,20 @@ private fun RadioHome(modifier: Modifier, controller: MediaController?) {
             Surface(
                 onClick = {
                     searchText = ""
-                    scope.launch { loadStations("") }
+                    scope.launch { refreshStations("") }
                 },
                 modifier = Modifier.weight(1f),
                 shape = MaterialTheme.shapes.medium,
                 tonalElevation = 2.dp
             ) {
-                Text("Česká rádia", modifier = Modifier.fillMaxWidth().padding(12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text("Česká rádia", modifier = Modifier.fillMaxWidth().padding(12.dp), textAlign = TextAlign.Center)
             }
         }
 
         when {
-            loading -> Text("Načítám stanice…")
+            loading -> Text("Aktualizuji stanice…")
             errorText != null -> Text(errorText!!)
-            else -> Text("${stations.size} stanic", style = MaterialTheme.typography.labelMedium)
+            else -> Text("${stations.size} uložených stanic", style = MaterialTheme.typography.labelMedium)
         }
 
         LazyColumn(
@@ -263,14 +290,67 @@ private fun RadioHome(modifier: Modifier, controller: MediaController?) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(stations, key = { it.id }) { station ->
-                StationRow(station = station, controller = controller)
+                StationRow(
+                    station = station,
+                    controller = controller,
+                    onFavorite = { scope.launch { repository.toggleFavorite(station) } }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StationRow(station: Station, controller: MediaController?) {
+private fun FavoritesScreen(
+    modifier: Modifier,
+    favorites: List<Station>,
+    controller: MediaController?,
+    repository: StationRepository
+) {
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Spacer(Modifier.height(4.dp))
+        Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
+        Text("Uloženo v telefonu", style = MaterialTheme.typography.bodyMedium)
+
+        if (favorites.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(Icons.Default.FavoriteBorder, contentDescription = null)
+                Spacer(Modifier.height(8.dp))
+                Text("Zatím nemáš žádné oblíbené rádio.")
+                Text("Klepni na srdce u stanice.", style = MaterialTheme.typography.bodySmall)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(favorites, key = { it.id }) { station ->
+                    StationRow(
+                        station = station,
+                        controller = controller,
+                        onFavorite = { scope.launch { repository.toggleFavorite(station) } }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StationRow(
+    station: Station,
+    controller: MediaController?,
+    onFavorite: () -> Unit
+) {
     val currentId = controller?.currentMediaItem?.mediaId
     val active = currentId == station.id
 
@@ -311,6 +391,12 @@ private fun StationRow(station: Station, controller: MediaController?) {
                 Text(
                     text = if (active) "▶ Právě hraje" else "Internet Radio",
                     style = MaterialTheme.typography.bodySmall
+                )
+            }
+            IconButton(onClick = onFavorite) {
+                Icon(
+                    imageVector = if (station.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (station.isFavorite) "Odebrat z oblíbených" else "Přidat do oblíbených"
                 )
             }
             Icon(
@@ -364,6 +450,6 @@ private fun PlaceholderScreen(modifier: Modifier, title: String, text: String) {
     ) {
         Text(title, style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
-        Text(text, style = MaterialTheme.typography.bodyLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(text, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
     }
 }
