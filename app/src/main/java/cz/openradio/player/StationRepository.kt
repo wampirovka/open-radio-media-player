@@ -10,6 +10,9 @@ class StationRepository(private val dao: StationDao) {
     val favorites: Flow<List<Station>> =
         dao.observeFavorites().map { entities -> entities.map(StationEntity::toStation) }
 
+    fun search(query: String): Flow<List<Station>> =
+        dao.observeSearch(query).map { entities -> entities.map(StationEntity::toStation) }
+
     suspend fun syncStations(stations: List<Station>) {
         if (stations.isEmpty()) return
 
