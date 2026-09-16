@@ -11,6 +11,9 @@ interface StationDao {
     @Query("SELECT * FROM stations ORDER BY votes DESC, listeners DESC, name COLLATE NOCASE ASC")
     fun observeAll(): Flow<List<StationEntity>>
 
+    @Query("SELECT * FROM stations WHERE name LIKE '%' || :query || '%' ORDER BY votes DESC, listeners DESC, name COLLATE NOCASE ASC")
+    fun observeSearch(query: String): Flow<List<StationEntity>>
+
     @Query("SELECT * FROM stations WHERE isFavorite = 1 ORDER BY name COLLATE NOCASE ASC")
     fun observeFavorites(): Flow<List<StationEntity>>
 
