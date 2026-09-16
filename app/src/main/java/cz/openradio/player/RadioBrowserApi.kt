@@ -13,11 +13,58 @@ object RadioBrowserApi {
         requestStations("countrycode=CZ&hidebroken=true&order=votes&reverse=true&limit=$limit")
 
     fun searchStations(query: String, limit: Int = 50): List<Station> {
+        val custom = parseCustomStation(query)
+        if (custom != null) return listOf(custom)
+
         val encoded = URLEncoder.encode(query.trim(), Charsets.UTF_8.name())
         return requestStations("name=$encoded&hidebroken=true&order=votes&reverse=true&limit=$limit")
     }
 
+    /**
+     * Supports adding a custom stream directly from the existing search field.
+     * Format: Name | https://example.com/stream
+     * A plain stream URL is also accepted and gets its host used as the station name.
+     */
+    private fun parseCustomStation(query: String): Station? {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return null
+
+        val separator = trimmed.indexOf('|')
+        val name: String
+        val streamUrl: String
+
+        if (separator > 0) {
+            name = trimmed.substring(0, separator).trim()
+            streamUrl = trimmed.substring(separator + 1).trim()
+        } else if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            streamUrl = trimmed
+            name = try {
+                URL(streamUrl).host.removePrefix("www.").ifBlank { "Vlastní rádio" }
+            } catch (_: Exception) {
+                "Vlastní rádio"
+            }
+        } else {
+            return null
+        }
+
+        if (name.isBlank()) return null
+        if (!streamUrl.startsWith("http://") && !streamUrl.startsWith("https://")) return null
+
+        val id = "custom:" + streamUrl.hashCode().toUInt().toString(16)
+        return Station(
+            id = id,
+            name = name,
+            streamUrl = streamUrl,
+            homepageUrl = null,
+            logoUrl = null,
+            votes = 0,
+            listeners = 0
+        )
+    }
+
     fun registerClick(stationUuid: String) {
+        if (stationUuid.startsWith("custom:")) return
+
         Thread {
             try {
                 get("$BASE_URL/json/url/${URLEncoder.encode(stationUuid, Charsets.UTF_8.name())}")
