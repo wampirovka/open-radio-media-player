@@ -5,6 +5,8 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import java.io.IOException
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -47,12 +49,19 @@ class PlaybackService : MediaSessionService() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+
         val player = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this))
             .build()
             .apply {
-                setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
+                setAudioAttributes(audioAttributes, true)
+                setHandleAudioBecomingNoisy(true)
+                setWakeMode(C.WAKE_MODE_NETWORK)
                 addListener(playerListener)
             }
 
@@ -109,6 +118,7 @@ class PlaybackService : MediaSessionService() {
                 MediaMetadata.Builder()
                     .setTitle(station.name)
                     .setArtist("Internet Radio")
+                    .setArtworkUri(station.logoUrl?.let { android.net.Uri.parse(it) })
                     .build()
             )
             .build()
