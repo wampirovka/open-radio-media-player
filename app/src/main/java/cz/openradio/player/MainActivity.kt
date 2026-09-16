@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -253,6 +254,7 @@ private fun RadioHome(
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val favorites by repository.favorites.collectAsState(initial = emptyList())
 
     val stationsFlow = remember(searchText) {
         if (searchText.isBlank()) repository.stations else repository.search(searchText.trim())
@@ -284,6 +286,23 @@ private fun RadioHome(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Spacer(Modifier.height(4.dp))
+
+        if (favorites.isNotEmpty()) {
+            Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(favorites, key = { it.id }) { station ->
+                    FavoriteStationCard(
+                        station = station,
+                        controller = controller,
+                        onFavorite = { scope.launch { repository.toggleFavorite(station) } }
+                    )
+                }
+            }
+        }
+
         Text("Objev rádia", style = MaterialTheme.typography.headlineSmall)
         Text("Stanice se ukládají do zařízení a oblíbené zůstávají i offline.", style = MaterialTheme.typography.bodyMedium)
 
@@ -342,6 +361,58 @@ private fun RadioHome(
                     controller = controller,
                     onFavorite = { scope.launch { repository.toggleFavorite(station) } }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FavoriteStationCard(
+    station: Station,
+    controller: MediaController?,
+    onFavorite: () -> Unit
+) {
+    val active = controller?.currentMediaItem?.mediaId == station.id
+
+    Card(
+        onClick = {
+            controller?.let { player ->
+                RadioBrowserApi.registerClick(station.id)
+                val item = MediaItem.Builder()
+                    .setMediaId(station.id)
+                    .setUri(station.streamUrl)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(station.name)
+                            .setArtist("Internet Radio")
+                            .build()
+                    )
+                    .build()
+                if (player.currentMediaItem?.mediaId != station.id) {
+                    player.setMediaItem(item)
+                    player.prepare()
+                }
+                player.play()
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                station.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                if (active) "▶ Hraje" else "▶ Přehrát",
+                style = MaterialTheme.typography.labelSmall
+            )
+            IconButton(onClick = onFavorite) {
+                Icon(Icons.Default.Favorite, contentDescription = "Odebrat z oblíbených")
             }
         }
     }
