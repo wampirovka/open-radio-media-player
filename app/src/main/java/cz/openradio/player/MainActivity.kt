@@ -88,7 +88,7 @@ class MainActivity : ComponentActivity() {
         localAudioSelection = merged
         getSharedPreferences("local_music", MODE_PRIVATE)
             .edit()
-            .putStringSet("uris", merged.map { it.toString() }.toSet())
+            .putString("uris", merged.joinToString("\n") { it.toString() })
             .apply()
     }
 
@@ -96,7 +96,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         localAudioSelection = getSharedPreferences("local_music", MODE_PRIVATE)
-            .getStringSet("uris", emptySet())
+            .getString("uris", "")
+            ?.split('\n')
+            ?.filter { it.isNotBlank() }
             ?.map { android.net.Uri.parse(it) }
             ?: emptyList()
 
@@ -500,13 +502,14 @@ private fun LocalMusicScreen(
     localAudioUris: List<android.net.Uri>,
     onPickAudio: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var tracks by remember(localAudioUris) { mutableStateOf<List<LocalTrack>>(emptyList()) }
     var loading by remember(localAudioUris) { mutableStateOf(localAudioUris.isNotEmpty()) }
 
     LaunchedEffect(localAudioUris) {
         loading = localAudioUris.isNotEmpty()
         tracks = localAudioUris.mapIndexed { index, uri ->
-            readLocalTrack(uri, androidx.compose.ui.platform.LocalContext.current, index)
+            readLocalTrack(uri, context, index)
         }
         loading = false
     }
@@ -564,9 +567,6 @@ private fun LocalMusicScreen(
                                                 .setTitle(localTrack.title)
                                                 .setArtist(localTrack.artist)
                                                 .setAlbumTitle(localTrack.album)
-                                                .setExtras(android.os.Bundle().apply {
-                                                    putLong("duration_ms", localTrack.durationMs)
-                                                })
                                                 .build()
                                         )
                                         .build()
