@@ -253,6 +253,7 @@ private fun RadioHome(
     var searchText by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var showAddStationDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val favorites by repository.favorites.collectAsState(initial = emptyList())
 
@@ -281,14 +282,39 @@ private fun RadioHome(
         refreshStations("")
     }
 
+    if (showAddStationDialog) {
+        AddStationDialog(
+            onDismiss = { showAddStationDialog = false },
+            onSave = { name, streamUrl, logoUrl ->
+                scope.launch {
+                    val stationId = "custom-${streamUrl.hashCode()}"
+                    repository.syncStations(
+                        listOf(
+                            Station(
+                                id = stationId,
+                                name = name,
+                                streamUrl = streamUrl,
+                                logoUrl = logoUrl
+                            )
+                        )
+                    )
+                    showAddStationDialog = false
+                    searchText = ""
+                }
+            }
+        )
+    }
+
     Column(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Spacer(Modifier.height(4.dp))
 
-        if (favorites.isNotEmpty()) {
-            Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
+        Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall)
+        if (favorites.isEmpty()) {
+            Text("Zatím žádná. Přidej rádio do oblíbených klepnutím na srdce.", style = MaterialTheme.typography.bodySmall)
+        } else {
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -343,6 +369,19 @@ private fun RadioHome(
             ) {
                 Text("Česká rádia", modifier = Modifier.fillMaxWidth().padding(12.dp), textAlign = TextAlign.Center)
             }
+        }
+
+        Surface(
+            onClick = { showAddStationDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 2.dp
+        ) {
+            Text(
+                "＋  Přidat vlastní rádio",
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                textAlign = TextAlign.Center
+            )
         }
 
         when {
