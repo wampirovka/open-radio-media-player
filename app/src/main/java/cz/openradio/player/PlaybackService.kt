@@ -11,7 +11,6 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -49,10 +48,7 @@ class PlaybackService : MediaSessionService() {
             )
             .build()
 
-        val loadErrorPolicy = DefaultLoadErrorHandlingPolicy(6)
-
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
-            .setLoadErrorHandlingPolicy(loadErrorPolicy)
 
         val player = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
@@ -89,7 +85,6 @@ class PlaybackService : MediaSessionService() {
     private fun scheduleReconnect() {
         val player = mediaSession?.player ?: return
 
-        // Never restart playback after an intentional pause or stop.
         if (!player.playWhenReady || player.currentMediaItem == null) return
 
         reconnectHandler.removeCallbacksAndMessages(null)
