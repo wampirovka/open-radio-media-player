@@ -5,7 +5,9 @@ data class Station(
     val name: String,
     val streamUrl: String,
     val homepageUrl: String? = null,
-    val logoUrl: String? = null
+    val logoUrl: String? = null,
+    val votes: Int = 0,
+    val listeners: Int = 0
 )
 
 object DefaultStations {
