@@ -24,6 +24,7 @@ android {
 
     kotlinOptions {
         jvmTarget = "21"
+        freeCompilerArgs += listOf("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api")
     }
 }
 
