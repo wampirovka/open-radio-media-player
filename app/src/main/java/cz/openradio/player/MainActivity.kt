@@ -2,6 +2,7 @@ package cz.openradio.player
 
 import android.content.ComponentName
 import android.content.Intent
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,9 +22,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -67,7 +71,10 @@ class MainActivity : ComponentActivity() {
     private val localAudioPicker = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
-        uris.forEach { uri ->
+        val existing = localAudioSelection.map { it.toString() }.toSet()
+        val merged = localAudioSelection + uris.filterNot { it.toString() in existing }
+
+        merged.forEach { uri ->
             try {
                 contentResolver.takePersistableUriPermission(
                     uri,
@@ -77,11 +84,21 @@ class MainActivity : ComponentActivity() {
                 // Some document providers do not offer persistable permissions.
             }
         }
-        localAudioSelection = uris
+
+        localAudioSelection = merged
+        getSharedPreferences("local_music", MODE_PRIVATE)
+            .edit()
+            .putStringSet("uris", merged.map { it.toString() }.toSet())
+            .apply()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        localAudioSelection = getSharedPreferences("local_music", MODE_PRIVATE)
+            .getStringSet("uris", emptySet())
+            ?.map { android.net.Uri.parse(it) }
+            ?: emptyList()
 
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
@@ -162,6 +179,10 @@ private fun RadioPlayerApp(
                         name = currentName!!,
                         isPlaying = isPlaying,
                         playbackState = playbackState,
+                        canGoPrevious = controller?.hasPreviousMediaItem == true,
+                        canGoNext = controller?.hasNextMediaItem == true,
+                        onPrevious = { controller?.seekToPreviousMediaItem() },
+                        onNext = { controller?.seekToNextMediaItem() },
                         onPlayPause = {
                             controller?.let { if (it.isPlaying) it.pause() else it.play() }
                         },
@@ -431,6 +452,47 @@ private fun StationRow(
     }
 }
 
+private suspend fun readLocalTrack(uri: android.net.Uri, context: android.content.Context, fallbackIndex: Int): LocalTrack =
+    withContext(Dispatchers.IO) {
+        var retriever: MediaMetadataRetriever? = null
+        try {
+            retriever = MediaMetadataRetriever()
+            retriever.setDataSource(context, uri)
+            val fallbackTitle = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}"
+            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                ?.takeIf { it.isNotBlank() }
+                ?: fallbackTitle
+            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?.takeIf { it.isNotBlank() }
+                ?: "Lokální hudba"
+            val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                ?: ""
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?: 0L
+
+            LocalTrack(
+                id = uri.toString().hashCode().toLong(),
+                title = title,
+                artist = artist,
+                album = album,
+                durationMs = duration,
+                contentUri = uri.toString()
+            )
+        } catch (_: Exception) {
+            LocalTrack(
+                id = uri.toString().hashCode().toLong(),
+                title = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}",
+                artist = "Lokální hudba",
+                album = "",
+                durationMs = 0L,
+                contentUri = uri.toString()
+            )
+        } finally {
+            retriever?.release()
+        }
+    }
+
 @Composable
 private fun LocalMusicScreen(
     modifier: Modifier,
@@ -438,17 +500,15 @@ private fun LocalMusicScreen(
     localAudioUris: List<android.net.Uri>,
     onPickAudio: () -> Unit
 ) {
-    val tracks = remember(localAudioUris) {
-        localAudioUris.mapIndexed { index, uri ->
-            LocalTrack(
-                id = index.toLong(),
-                title = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${index + 1}",
-                artist = "Lokální hudba",
-                album = "",
-                durationMs = 0L,
-                contentUri = uri.toString()
-            )
+    var tracks by remember(localAudioUris) { mutableStateOf<List<LocalTrack>>(emptyList()) }
+    var loading by remember(localAudioUris) { mutableStateOf(localAudioUris.isNotEmpty()) }
+
+    LaunchedEffect(localAudioUris) {
+        loading = localAudioUris.isNotEmpty()
+        tracks = localAudioUris.mapIndexed { index, uri ->
+            readLocalTrack(uri, androidx.compose.ui.platform.LocalContext.current, index)
         }
+        loading = false
     }
 
     Column(
@@ -475,8 +535,9 @@ private fun LocalMusicScreen(
             }
         }
 
-        if (tracks.isEmpty()) {
-            Column(
+        when {
+            loading -> Text("Načítám metadata skladeb…")
+            tracks.isEmpty() -> Column(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -484,27 +545,34 @@ private fun LocalMusicScreen(
                 Text("Knihovna je zatím prázdná.")
                 Text("Vyber jeden nebo více audio souborů.", style = MaterialTheme.typography.bodySmall)
             }
-        } else {
-            LazyColumn(
+            else -> LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(tracks, key = { it.id }) { track ->
+                    val currentId = controller?.currentMediaItem?.mediaId
+                    val active = currentId == "local:${track.id}"
                     Card(
                         onClick = {
                             controller?.let { player ->
-                                val item = MediaItem.Builder()
-                                    .setMediaId("local:${track.id}")
-                                    .setUri(track.contentUri)
-                                    .setMediaMetadata(
-                                        MediaMetadata.Builder()
-                                            .setTitle(track.title)
-                                            .setArtist(track.artist)
-                                            .setAlbumTitle(track.album)
-                                            .build()
-                                    )
-                                    .build()
-                                player.setMediaItem(item)
+                                val items = tracks.map { localTrack ->
+                                    MediaItem.Builder()
+                                        .setMediaId("local:${localTrack.id}")
+                                        .setUri(localTrack.contentUri)
+                                        .setMediaMetadata(
+                                            MediaMetadata.Builder()
+                                                .setTitle(localTrack.title)
+                                                .setArtist(localTrack.artist)
+                                                .setAlbumTitle(localTrack.album)
+                                                .setExtras(android.os.Bundle().apply {
+                                                    putLong("duration_ms", localTrack.durationMs)
+                                                })
+                                                .build()
+                                        )
+                                        .build()
+                                }
+                                val startIndex = tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                                player.setMediaItems(items, startIndex, 0L)
                                 player.prepare()
                                 player.play()
                             }
@@ -517,9 +585,17 @@ private fun LocalMusicScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(track.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(track.artist, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = if (track.album.isBlank()) track.artist else "${track.artist} • ${track.album}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Přehrát")
+                            Icon(
+                                if (active) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (active) "Právě hraje" else "Přehrát"
+                            )
                         }
                     }
                 }
@@ -533,14 +609,21 @@ private fun MiniPlayer(
     name: String,
     isPlaying: Boolean,
     playbackState: Int,
+    canGoPrevious: Boolean,
+    canGoNext: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     onPlayPause: () -> Unit,
     onStop: () -> Unit
 ) {
     Surface(tonalElevation = 4.dp) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = onPrevious, enabled = canGoPrevious) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "Předchozí")
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -553,7 +636,13 @@ private fun MiniPlayer(
                 )
             }
             IconButton(onClick = onPlayPause) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Přehrát / pozastavit")
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = "Přehrát / pozastavit"
+                )
+            }
+            IconButton(onClick = onNext, enabled = canGoNext) {
+                Icon(Icons.Default.SkipNext, contentDescription = "Další")
             }
             IconButton(onClick = onStop) {
                 Text("■", style = MaterialTheme.typography.titleMedium)
