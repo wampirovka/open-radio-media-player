@@ -181,8 +181,8 @@ private fun RadioPlayerApp(
                         name = currentName!!,
                         isPlaying = isPlaying,
                         playbackState = playbackState,
-                        canGoPrevious = controller?.hasPreviousMediaItem == true,
-                        canGoNext = controller?.hasNextMediaItem == true,
+                        canGoPrevious = controller?.hasPreviousMediaItem() == true,
+                        canGoNext = controller?.hasNextMediaItem() == true,
                         onPrevious = { controller?.seekToPreviousMediaItem() },
                         onNext = { controller?.seekToNextMediaItem() },
                         onPlayPause = {
