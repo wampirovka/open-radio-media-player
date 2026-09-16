@@ -250,7 +250,6 @@ private fun HomeScreen(modifier: Modifier = Modifier, controller: MediaControlle
         ) {
             items(stations, key = { station -> station.id }) { station ->
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         controller?.let { player ->
                             RadioBrowserApi.registerClick(station.id)
@@ -272,7 +271,8 @@ private fun HomeScreen(modifier: Modifier = Modifier, controller: MediaControlle
                             }
                             player.play()
                         }
-                    }
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
