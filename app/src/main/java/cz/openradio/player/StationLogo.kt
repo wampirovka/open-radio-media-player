@@ -1,6 +1,7 @@
 package cz.openradio.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -30,17 +31,24 @@ fun StationLogo(
             .ifBlank { "R" }
     }
 
+    val shape = RoundedCornerShape(16.dp)
+
     Box(
         modifier = modifier
-            .size(56.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .size(64.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = shape
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (station.logoUrl.isNullOrBlank()) {
             Text(
                 text = fallback,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
