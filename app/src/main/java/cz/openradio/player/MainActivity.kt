@@ -10,20 +10,26 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -33,6 +39,8 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -91,8 +99,36 @@ private fun HomeScreen(
     modifier: Modifier = Modifier,
     controller: MediaController?
 ) {
-    var isPlaying by mutableStateOf(controller?.isPlaying == true)
-    var playbackState by mutableStateOf(controller?.playbackState ?: Player.STATE_IDLE)
+    var isPlaying by remember(controller) { mutableStateOf(controller?.isPlaying == true) }
+    var playbackState by remember(controller) {
+        mutableStateOf(controller?.playbackState ?: Player.STATE_IDLE)
+    }
+    var stations by remember { mutableStateOf<List<Station>>(emptyList()) }
+    var searchText by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(true) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+
+    suspend fun loadStations(query: String) {
+        loading = true
+        errorText = null
+        try {
+            stations = withContext(Dispatchers.IO) {
+                if (query.isBlank()) {
+                    RadioBrowserApi.loadCzechStations()
+                } else {
+                    RadioBrowserApi.searchStations(query)
+                }
+            }
+        } catch (e: Exception) {
+            errorText = "Nepodařilo se načíst stanice."
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadStations("")
+    }
 
     DisposableEffect(controller) {
         if (controller == null) {
@@ -115,96 +151,140 @@ private fun HomeScreen(
         }
     }
 
-    val station = DefaultStations.fajnRock
+    val currentStationId = controller?.currentMediaItem?.mediaId
+    val currentStationName = controller?.currentMediaItem?.mediaMetadata?.title?.toString()
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
             text = "Internet Radio",
             style = MaterialTheme.typography.labelLarge
         )
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "📻 ${station.name}",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Text(
-                    text = "Internet Radio",
-                    style = MaterialTheme.typography.bodyLarge
-                )
+        if (currentStationName != null) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("📻 $currentStationName", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        text = when {
+                            isPlaying -> "Hraje"
+                            playbackState == Player.STATE_BUFFERING -> "Načítám stream…"
+                            playbackState == Player.STATE_IDLE -> "Připraveno"
+                            else -> "Pozastaveno"
+                        },
+                        style = MaterialTheme.typography.bodyMedium
+                    )
 
-                Text(
-                    text = when {
-                        isPlaying -> "Hraje"
-                        playbackState == Player.STATE_BUFFERING -> "Načítám stream…"
-                        playbackState == Player.STATE_IDLE -> "Připraveno"
-                        else -> "Pozastaveno"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = controller != null,
-                    onClick = {
-                        if (controller?.isPlaying == true) {
-                            controller.pause()
-                        } else {
-                            controller?.let { player ->
-                                if (player.currentMediaItem == null || player.currentMediaItem?.mediaId != station.id) {
-                                    player.setMediaItem(
-                                        MediaItem.Builder()
-                                            .setMediaId(station.id)
-                                            .setUri(station.streamUrl)
-                                            .setMediaMetadata(
-                                                MediaMetadata.Builder()
-                                                    .setTitle(station.name)
-                                                    .setArtist("Internet Radio")
-                                                    .build()
-                                            )
-                                            .build()
-                                    )
-                                    player.prepare()
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            modifier = Modifier.weight(1f),
+                            enabled = controller != null,
+                            onClick = {
+                                if (controller?.isPlaying == true) {
+                                    controller.pause()
+                                } else {
+                                    controller?.play()
                                 }
-                                player.play()
                             }
+                        ) {
+                            Text(if (isPlaying) "PAUSE" else "PLAY")
+                        }
+
+                        Button(
+                            modifier = Modifier.weight(1f),
+                            enabled = controller?.currentMediaItem != null,
+                            onClick = { controller?.stop() }
+                        ) {
+                            Text("STOP")
                         }
                     }
-                ) {
-                    Text(if (isPlaying) "PAUSE" else "PLAY")
-                }
-
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = controller?.currentMediaItem != null,
-                    onClick = {
-                        controller?.stop()
-                        isPlaying = false
-                        playbackState = Player.STATE_IDLE
-                    }
-                ) {
-                    Text("STOP")
                 }
             }
         }
 
-        Text(
-            text = "Přehrávání běží přes Media3 MediaSessionService, takže může pokračovat na pozadí i po zamknutí telefonu.",
-            style = MaterialTheme.typography.bodyMedium
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = searchText,
+            onValueChange = { searchText = it },
+            singleLine = true,
+            label = { Text("Hledat rádio") },
+            placeholder = { Text("např. Rock, Radio, Fajn") }
         )
 
-        Text(
-            text = "Notifikace umožní ovládání rádia i po zamknutí telefonu.",
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = !loading,
+                onClick = {
+                    // Search is launched from the composition-safe coroutine scope below.
+                }
+            ) {
+                Text("HLEDAT")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = !loading,
+                onClick = {
+                    searchText = ""
+                    // Initial list is loaded again by the refresh effect below.
+                }
+            ) {
+                Text("ČESKÁ RÁDIA")
+            }
+        }
+
+        when {
+            loading -> Text("Načítám stanice…")
+            errorText != null -> Text(errorText!!)
+            else -> Text("Stanice: ${stations.size}")
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(stations, key = { it.id }) { station ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        controller?.let { player ->
+                            RadioBrowserApi.registerClick(station.id)
+                            player.setMediaItem(
+                                MediaItem.Builder()
+                                    .setMediaId(station.id)
+                                    .setUri(station.streamUrl)
+                                    .setMediaMetadata(
+                                        MediaMetadata.Builder()
+                                            .setTitle(station.name)
+                                            .setArtist("Internet Radio")
+                                            .build()
+                                    )
+                                    .build()
+                            )
+                            player.prepare()
+                            player.play()
+                        }
+                    }
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = if (station.id == currentStationId) "▶ ${station.name}" else station.name,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Internet Radio",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
     }
 }
