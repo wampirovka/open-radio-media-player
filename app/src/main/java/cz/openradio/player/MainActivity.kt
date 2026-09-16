@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -40,6 +41,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,6 +109,7 @@ private fun HomeScreen(
     var searchText by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     suspend fun loadStations(query: String) {
         loading = true
@@ -119,7 +122,7 @@ private fun HomeScreen(
                     RadioBrowserApi.searchStations(query)
                 }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             errorText = "Nepodařilo se načíst stanice."
         } finally {
             loading = false
@@ -160,10 +163,7 @@ private fun HomeScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "Internet Radio",
-            style = MaterialTheme.typography.labelLarge
-        )
+        Text("Internet Radio", style = MaterialTheme.typography.labelLarge)
 
         if (currentStationName != null) {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -187,11 +187,8 @@ private fun HomeScreen(
                             modifier = Modifier.weight(1f),
                             enabled = controller != null,
                             onClick = {
-                                if (controller?.isPlaying == true) {
-                                    controller.pause()
-                                } else {
-                                    controller?.play()
-                                }
+                                if (controller?.isPlaying == true) controller.pause()
+                                else controller?.play()
                             }
                         ) {
                             Text(if (isPlaying) "PAUSE" else "PLAY")
@@ -222,9 +219,7 @@ private fun HomeScreen(
             Button(
                 modifier = Modifier.weight(1f),
                 enabled = !loading,
-                onClick = {
-                    // Search is launched from the composition-safe coroutine scope below.
-                }
+                onClick = { scope.launch { loadStations(searchText) } }
             ) {
                 Text("HLEDAT")
             }
@@ -233,7 +228,7 @@ private fun HomeScreen(
                 enabled = !loading,
                 onClick = {
                     searchText = ""
-                    // Initial list is loaded again by the refresh effect below.
+                    scope.launch { loadStations("") }
                 }
             ) {
                 Text("ČESKÁ RÁDIA")
@@ -278,10 +273,7 @@ private fun HomeScreen(
                             text = if (station.id == currentStationId) "▶ ${station.name}" else station.name,
                             style = MaterialTheme.typography.titleMedium
                         )
-                        Text(
-                            text = "Internet Radio",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Text("Internet Radio", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
