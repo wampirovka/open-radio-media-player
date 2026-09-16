@@ -9,12 +9,10 @@ data class Station(
 )
 
 object DefaultStations {
-    // Placeholder until the current official Fajn Rock stream endpoint is verified.
-    // Keeping it configurable prevents the playback engine from depending on a guessed URL.
     val fajnRock = Station(
         id = "fajn-rock-music",
         name = "Fajn Rock Music",
-        streamUrl = "https://example.invalid/fajn-rock-stream",
+        streamUrl = "https://icecast1.play.cz/fajnrock128.mp3?1397678024622.mp3&r=375",
         homepageUrl = "https://www.fajnrockmusic.cz/"
     )
 }
