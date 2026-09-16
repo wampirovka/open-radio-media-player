@@ -20,10 +20,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -31,7 +32,7 @@ import androidx.media3.session.SessionToken
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
 
-    private var controller: MediaController? = null
+    private var controller: MediaController? by mutableStateOf(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     HomeScreen(
                         modifier = Modifier.padding(padding),
-                        controllerProvider = { controller }
+                        controller = controller
                     )
                 }
             }
@@ -71,20 +72,18 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun HomeScreen(
     modifier: Modifier = Modifier,
-    controllerProvider: () -> MediaController?
+    controller: MediaController?
 ) {
-    val controller = controllerProvider()
-    var isPlaying by remember(controller) {
-        mutableStateOf(controller?.isPlaying == true)
-    }
-    var playbackState by remember(controller) {
-        mutableStateOf(controller?.playbackState ?: Player.STATE_IDLE)
-    }
+    var isPlaying by mutableStateOf(controller?.isPlaying == true)
+    var playbackState by mutableStateOf(controller?.playbackState ?: Player.STATE_IDLE)
 
     DisposableEffect(controller) {
         if (controller == null) {
             onDispose { }
         } else {
+            isPlaying = controller.isPlaying
+            playbackState = controller.playbackState
+
             val listener = object : Player.Listener {
                 override fun onIsPlayingChanged(playing: Boolean) {
                     isPlaying = playing
@@ -141,16 +140,16 @@ private fun HomeScreen(
                     enabled = controller != null,
                     onClick = {
                         if (controller?.isPlaying == true) {
-                            controller?.pause()
+                            controller.pause()
                         } else {
                             controller?.let { player ->
                                 if (player.currentMediaItem == null || player.currentMediaItem?.mediaId != station.id) {
                                     player.setMediaItem(
-                                        androidx.media3.common.MediaItem.Builder()
+                                        MediaItem.Builder()
                                             .setMediaId(station.id)
                                             .setUri(station.streamUrl)
                                             .setMediaMetadata(
-                                                androidx.media3.common.MediaMetadata.Builder()
+                                                MediaMetadata.Builder()
                                                     .setTitle(station.name)
                                                     .setArtist("Internet Radio")
                                                     .build()
