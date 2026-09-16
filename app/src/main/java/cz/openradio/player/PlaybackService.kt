@@ -18,7 +18,6 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 class PlaybackService : MediaSessionService() {
-
     private var mediaSession: MediaSession? = null
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var reconnectAttempt = 0
@@ -27,7 +26,6 @@ class PlaybackService : MediaSessionService() {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             if (isNetworkError(error)) scheduleReconnect()
         }
-
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 reconnectAttempt = 0
@@ -38,43 +36,16 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                30_000,
-                120_000,
-                5_000,
-                10_000
-            )
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .build()
-
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .build()
-
-        val player = ExoPlayer.Builder(this)
-            .setLoadControl(loadControl)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this))
-            .build()
-            .apply {
-                setAudioAttributes(audioAttributes, true)
-                setHandleAudioBecomingNoisy(true)
-                setWakeMode(C.WAKE_MODE_NETWORK)
-                addListener(playerListener)
-            }
-
-        val sessionActivity = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        mediaSession = MediaSession.Builder(this, player)
-            .setSessionActivity(sessionActivity)
-            .build()
+        val loadControl = DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 120_000, 5_000, 10_000).setPrioritizeTimeOverSizeThresholds(true).build()
+        val audioAttributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build()
+        val player = ExoPlayer.Builder(this).setLoadControl(loadControl).setMediaSourceFactory(DefaultMediaSourceFactory(this)).build().apply {
+            setAudioAttributes(audioAttributes, true)
+            setHandleAudioBecomingNoisy(true)
+            setWakeMode(C.WAKE_MODE_NETWORK)
+            addListener(playerListener)
+        }
+        val sessionActivity = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        mediaSession = MediaSession.Builder(this, player).setSessionActivity(sessionActivity).build()
     }
 
     private fun isNetworkError(error: androidx.media3.common.PlaybackException): Boolean {
@@ -87,18 +58,12 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun scheduleReconnect() {
+        if (!getSharedPreferences("playback_settings", MODE_PRIVATE).getBoolean("reconnect", true)) return
         val player = mediaSession?.player ?: return
         if (!player.playWhenReady || player.currentMediaItem == null) return
-
         reconnectHandler.removeCallbacksAndMessages(null)
-        val delayMs = when (reconnectAttempt) {
-            0 -> 10_000L
-            1 -> 20_000L
-            2 -> 30_000L
-            else -> 60_000L
-        }
+        val delayMs = when (reconnectAttempt) { 0 -> 10_000L; 1 -> 20_000L; 2 -> 30_000L; else -> 60_000L }
         reconnectAttempt++
-
         reconnectHandler.postDelayed({
             val currentPlayer = mediaSession?.player ?: return@postDelayed
             if (!currentPlayer.playWhenReady || currentPlayer.currentMediaItem == null) return@postDelayed
@@ -110,19 +75,9 @@ class PlaybackService : MediaSessionService() {
     fun playStation(station: Station) {
         reconnectHandler.removeCallbacksAndMessages(null)
         reconnectAttempt = 0
-
-        val item = MediaItem.Builder()
-            .setMediaId(station.id)
-            .setUri(station.streamUrl)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(station.name)
-                    .setArtist("Internet Radio")
-                    .setArtworkUri(station.logoUrl?.let { android.net.Uri.parse(it) })
-                    .build()
-            )
-            .build()
-
+        val item = MediaItem.Builder().setMediaId(station.id).setUri(station.streamUrl).setMediaMetadata(
+            MediaMetadata.Builder().setTitle(station.name).setArtist("Internet Radio").setArtworkUri(station.logoUrl?.let { android.net.Uri.parse(it) }).build()
+        ).build()
         mediaSession?.player?.setMediaItem(item)
         mediaSession?.player?.prepare()
         mediaSession?.player?.play()
@@ -132,11 +87,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         reconnectHandler.removeCallbacksAndMessages(null)
-        mediaSession?.let {
-            it.player.removeListener(playerListener)
-            it.player.release()
-            it.release()
-        }
+        mediaSession?.let { it.player.removeListener(playerListener); it.player.release(); it.release() }
         mediaSession = null
         super.onDestroy()
     }
