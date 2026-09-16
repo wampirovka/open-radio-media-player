@@ -46,11 +46,19 @@ object RadioBrowserApi {
                 name = name,
                 streamUrl = streamUrl,
                 homepageUrl = item.optString("homepage").takeIf { it.isNotBlank() },
-                logoUrl = item.optString("favicon").takeIf { it.isNotBlank() }
+                logoUrl = item.optString("favicon").takeIf { it.isNotBlank() },
+                votes = item.optInt("votes", 0),
+                listeners = item.optInt("clickcount", 0)
             )
         }
 
         return result
+            .distinctBy { it.id }
+            .sortedWith(
+                compareByDescending<Station> { it.votes }
+                    .thenByDescending { it.listeners }
+                    .thenBy { it.name.lowercase() }
+            )
     }
 
     private fun get(urlString: String): String {
@@ -62,7 +70,9 @@ object RadioBrowserApi {
             setRequestProperty("Accept", "application/json")
         }
 
-        return connection.inputStream.bufferedReader().use { it.readText() }.also {
+        return try {
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } finally {
             connection.disconnect()
         }
     }
