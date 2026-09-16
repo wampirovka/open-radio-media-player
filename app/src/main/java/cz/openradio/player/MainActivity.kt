@@ -17,18 +17,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -160,7 +156,7 @@ private fun RadioPlayerApp(controller: MediaController?) {
                     NavigationBarItem(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
-                        icon = { Icon(Icons.Default.LibraryMusic, contentDescription = "Hudba") },
+                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Hudba") },
                         label = { Text("Hudba") }
                     )
                     NavigationBarItem(
@@ -318,8 +314,8 @@ private fun StationRow(station: Station, controller: MediaController?) {
                 )
             }
             Icon(
-                imageVector = if (active) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = "Přehrát"
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = if (active) "Právě hraje" else "Přehrát"
             )
         }
     }
@@ -350,10 +346,10 @@ private fun MiniPlayer(
                 )
             }
             IconButton(onClick = onPlayPause) {
-                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Přehrát / pozastavit")
+                Icon(Icons.Default.PlayArrow, contentDescription = "Přehrát / pozastavit")
             }
             IconButton(onClick = onStop) {
-                Icon(Icons.Default.Stop, contentDescription = "Stop")
+                Icon(Icons.Default.Close, contentDescription = "Stop")
             }
         }
     }
