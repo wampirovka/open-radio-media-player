@@ -39,11 +39,12 @@ class PlaybackService : MediaSessionService() {
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                15_000,
-                60_000,
-                2_500,
-                7_500
+                30_000,
+                120_000,
+                5_000,
+                10_000
             )
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
         val player = ExoPlayer.Builder(this)
