@@ -23,10 +23,11 @@ fun StationEntity.toStation(): Station = Station(
     homepageUrl = homepageUrl,
     logoUrl = logoUrl,
     votes = votes,
-    listeners = listeners
+    listeners = listeners,
+    isFavorite = isFavorite
 )
 
-fun Station.toEntity(isFavorite: Boolean = false): StationEntity = StationEntity(
+fun Station.toEntity(isFavorite: Boolean = this.isFavorite): StationEntity = StationEntity(
     id = id,
     name = name,
     streamUrl = streamUrl,
