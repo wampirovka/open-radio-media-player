@@ -90,7 +90,25 @@ class MainActivity : ComponentActivity() {
             ?.split('\n')?.filter { it.isNotBlank() }?.map { android.net.Uri.parse(it) } ?: emptyList()
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
-        future.addListener({ controller = future.get() }, mainExecutor)
+        future.addListener({
+            controller = future.get()
+            if (getSharedPreferences("playback_settings", MODE_PRIVATE).getBoolean("auto_start", false)) {
+                val prefs = getSharedPreferences("last_radio", MODE_PRIVATE)
+                val id = prefs.getString("id", null)
+                val url = prefs.getString("url", null)
+                val name = prefs.getString("name", null)
+                val logo = prefs.getString("logo", null)
+                if (id != null && url != null && name != null) {
+                    val item = MediaItem.Builder().setMediaId(id).setUri(url).setMediaMetadata(
+                        MediaMetadata.Builder().setTitle(name).setArtist("Internet Radio")
+                            .setArtworkUri(logo?.let { android.net.Uri.parse(it) }).build()
+                    ).build()
+                    controller?.setMediaItem(item)
+                    controller?.prepare()
+                    controller?.play()
+                }
+            }
+        }, mainExecutor)
         setContent {
             MaterialTheme {
                 RadioPlayerApp(controller, localAudioSelection) { localAudioPicker.launch(arrayOf("audio/*")) }
@@ -160,14 +178,10 @@ private fun RadioPlayerApp(controller: MediaController?, localAudioUris: List<an
         }
     ) { paddingValues ->
         if (showFullPlayer && currentName != null) {
-            FullPlayer(
-                modifier = Modifier.padding(paddingValues), controller = controller, name = title, artist = currentArtist,
-                artworkUri = currentArtwork, isPlaying = isPlaying, playbackState = playbackState,
-                canGoPrevious = controller?.hasPreviousMediaItem() == true, canGoNext = controller?.hasNextMediaItem() == true,
-                onClose = { showFullPlayer = false }, onPrevious = { controller?.seekToPreviousMediaItem() },
-                onNext = { controller?.seekToNextMediaItem() }, onPlayPause = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
-                onStop = { controller?.stop(); showFullPlayer = false }
-            )
+            FullPlayer(Modifier.padding(paddingValues), controller, title, currentArtist, currentArtwork, isPlaying, playbackState,
+                controller?.hasPreviousMediaItem() == true, controller?.hasNextMediaItem() == true,
+                { showFullPlayer = false }, { controller?.seekToPreviousMediaItem() }, { controller?.seekToNextMediaItem() },
+                { controller?.let { if (it.isPlaying) it.pause() else it.play() } }, { controller?.stop(); showFullPlayer = false })
         } else when (selectedTab) {
             0 -> RadioHome(Modifier.padding(paddingValues), controller, repository)
             1 -> FavoritesScreen(Modifier.padding(paddingValues), favorites, controller, repository)
@@ -178,26 +192,26 @@ private fun RadioPlayerApp(controller: MediaController?, localAudioUris: List<an
 }
 
 @Composable
-private fun FullPlayer(
-    modifier: Modifier, controller: MediaController?, name: String, artist: String, artworkUri: android.net.Uri?, isPlaying: Boolean,
-    playbackState: Int, canGoPrevious: Boolean, canGoNext: Boolean, onClose: () -> Unit, onPrevious: () -> Unit,
-    onNext: () -> Unit, onPlayPause: () -> Unit, onStop: () -> Unit
-) {
+private fun FullPlayer(modifier: Modifier, controller: MediaController?, name: String, artist: String, artworkUri: android.net.Uri?, isPlaying: Boolean,
+                       playbackState: Int, canGoPrevious: Boolean, canGoNext: Boolean, onClose: () -> Unit, onPrevious: () -> Unit,
+                       onNext: () -> Unit, onPlayPause: () -> Unit, onStop: () -> Unit) {
     Column(modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Zavřít") }
             Text("Přehrávač", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
             Spacer(Modifier.width(48.dp))
         }
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
         if (artworkUri != null) {
             coil.compose.AsyncImage(model = artworkUri, contentDescription = null, modifier = Modifier.width(240.dp).height(240.dp))
         } else {
             Surface(Modifier.width(240.dp).height(240.dp), shape = MaterialTheme.shapes.extraLarge, tonalElevation = 4.dp) {
-                BoxPlaceholder()
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Icon(Icons.Default.PlayArrow, null); Text("Open Radio", style = MaterialTheme.typography.titleMedium)
+                }
             }
         }
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(24.dp))
         Text(name, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (artist.isNotBlank()) Text(artist, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
         Spacer(Modifier.height(12.dp))
@@ -210,19 +224,6 @@ private fun FullPlayer(
         }
         Spacer(Modifier.height(16.dp))
         Surface(onClick = onStop, shape = MaterialTheme.shapes.medium, tonalElevation = 2.dp) { Text("Zastavit", Modifier.padding(horizontal = 28.dp, vertical = 12.dp)) }
-    }
-}
-
-@Composable
-private fun BoxPlaceholder() {
-    BoxPlaceholderContent()
-}
-
-@Composable
-private fun BoxPlaceholderContent() {
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(Icons.Default.PlayArrow, null)
-        Text("Open Radio", style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -264,9 +265,7 @@ private fun RadioHome(modifier: Modifier, controller: MediaController?, reposito
 private fun FavoriteStationCard(station: Station, controller: MediaController?, onFavorite: () -> Unit) {
     val active = controller?.currentMediaItem?.mediaId == station.id
     Card(onClick = { playStation(controller, station) }, Modifier.width(156.dp)) {
-        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            StationLogo(station); Spacer(Modifier.height(8.dp)); Text(station.name, MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(if (active) "▶ Hraje" else "▶ Přehrát", style = MaterialTheme.typography.labelSmall); IconButton(onClick = onFavorite) { Icon(Icons.Default.Favorite, "Odebrat z oblíbených") }
-        }
+        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) { StationLogo(station); Spacer(Modifier.height(8.dp)); Text(station.name, MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(if (active) "▶ Hraje" else "▶ Přehrát", style = MaterialTheme.typography.labelSmall); IconButton(onClick = onFavorite) { Icon(Icons.Default.Favorite, "Odebrat z oblíbených") } }
     }
 }
 
@@ -275,9 +274,8 @@ private fun FavoritesScreen(modifier: Modifier, favorites: List<Station>, contro
     val scope = rememberCoroutineScope()
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Spacer(Modifier.height(4.dp)); Text("Oblíbená rádia", style = MaterialTheme.typography.headlineSmall); Text("Uloženo v telefonu", style = MaterialTheme.typography.bodyMedium)
-        if (favorites.isEmpty()) {
-            Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.FavoriteBorder, null); Spacer(Modifier.height(8.dp)); Text("Zatím nemáš žádné oblíbené rádio."); Text("Klepni na srdce u stanice.", style = MaterialTheme.typography.bodySmall) }
-        } else LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(favorites, key = { it.id }) { station -> StationRow(station, controller) { scope.launch { repository.toggleFavorite(station) } } } }
+        if (favorites.isEmpty()) Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Default.FavoriteBorder, null); Spacer(Modifier.height(8.dp)); Text("Zatím nemáš žádné oblíbené rádio."); Text("Klepni na srdce u stanice.", style = MaterialTheme.typography.bodySmall) }
+        else LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(favorites, key = { it.id }) { station -> StationRow(station, controller) { scope.launch { repository.toggleFavorite(station) } } } }
     }
 }
 
@@ -297,9 +295,23 @@ private fun playStation(controller: MediaController?, station: Station) {
     controller?.let { player ->
         if (!station.id.startsWith("custom-")) RadioBrowserApi.registerClick(station.id)
         val item = MediaItem.Builder().setMediaId(station.id).setUri(station.streamUrl).setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtist("Internet Radio").setArtworkUri(station.logoUrl?.let { android.net.Uri.parse(it) }).build()).build()
+        contextForSettings = player
         if (player.currentMediaItem?.mediaId != station.id) { player.setMediaItem(item); player.prepare() }
         player.play()
+        lastRadioStore(item)
     }
+}
+
+private var contextForSettings: MediaController? = null
+private fun lastRadioStore(item: MediaItem) {
+    val player = contextForSettings ?: return
+    val context = player.context
+    context.getSharedPreferences("last_radio", android.content.Context.MODE_PRIVATE).edit()
+        .putString("id", item.mediaId)
+        .putString("url", item.localConfiguration?.uri?.toString())
+        .putString("name", item.mediaMetadata.title?.toString())
+        .putString("logo", item.mediaMetadata.artworkUri?.toString())
+        .apply()
 }
 
 private suspend fun readLocalTrack(uri: android.net.Uri, context: android.content.Context, fallbackIndex: Int): LocalTrack = withContext(Dispatchers.IO) {
@@ -308,9 +320,8 @@ private suspend fun readLocalTrack(uri: android.net.Uri, context: android.conten
         retriever = MediaMetadataRetriever(); retriever.setDataSource(context, uri)
         val fallbackTitle = uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}"
         LocalTrack(uri.toString().hashCode().toLong(), retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.takeIf { it.isNotBlank() } ?: fallbackTitle, retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.takeIf { it.isNotBlank() } ?: "Lokální hudba", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L, uri.toString())
-    } catch (_: Exception) {
-        LocalTrack(uri.toString().hashCode().toLong(), uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}", "Lokální hudba", "", 0L, uri.toString())
-    } finally { retriever?.release() }
+    } catch (_: Exception) { LocalTrack(uri.toString().hashCode().toLong(), uri.lastPathSegment?.substringAfterLast('/') ?: "Lokální skladba ${fallbackIndex + 1}", "Lokální hudba", "", 0L, uri.toString()) }
+    finally { retriever?.release() }
 }
 
 @Composable
@@ -327,12 +338,7 @@ private fun LocalMusicScreen(modifier: Modifier, controller: MediaController?, l
             tracks.isEmpty() -> Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { Text("Knihovna je zatím prázdná."); Text("Vyber jeden nebo více audio souborů.", style = MaterialTheme.typography.bodySmall) }
             else -> LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { items(tracks, key = { it.id }) { track ->
                 val active = controller?.currentMediaItem?.mediaId == "local:${track.id}"
-                Card(onClick = {
-                    controller?.let { player ->
-                        val items = tracks.map { localTrack -> MediaItem.Builder().setMediaId("local:${localTrack.id}").setUri(localTrack.contentUri).setMediaMetadata(MediaMetadata.Builder().setTitle(localTrack.title).setArtist(localTrack.artist).setAlbumTitle(localTrack.album).build()).build() }
-                        player.setMediaItems(items, tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0), 0L); player.prepare(); player.play()
-                    }
-                }, Modifier.fillMaxWidth()) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(track.title, MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(if (track.album.isBlank()) track.artist else "${track.artist} • ${track.album}", MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Icon(if (active) Icons.Default.Pause else Icons.Default.PlayArrow, if (active) "Právě hraje" else "Přehrát") } }
+                Card(onClick = { controller?.let { player -> val items = tracks.map { localTrack -> MediaItem.Builder().setMediaId("local:${localTrack.id}").setUri(localTrack.contentUri).setMediaMetadata(MediaMetadata.Builder().setTitle(localTrack.title).setArtist(localTrack.artist).setAlbumTitle(localTrack.album).build()).build() }; player.setMediaItems(items, tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0), 0L); player.prepare(); player.play() } }, Modifier.fillMaxWidth()) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(track.title, MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(if (track.album.isBlank()) track.artist else "${track.artist} • ${track.album}", MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }; Icon(if (active) Icons.Default.Pause else Icons.Default.PlayArrow, if (active) "Právě hraje" else "Přehrát") } }
             } }
         }
     }
@@ -340,15 +346,13 @@ private fun LocalMusicScreen(modifier: Modifier, controller: MediaController?, l
 
 @Composable
 private fun MiniPlayer(name: String, isPlaying: Boolean, playbackState: Int, canGoPrevious: Boolean, canGoNext: Boolean, onPrevious: () -> Unit, onNext: () -> Unit, onPlayPause: () -> Unit, onStop: () -> Unit, onOpen: () -> Unit) {
-    Surface(onClick = onOpen, tonalElevation = 4.dp) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onPrevious, enabled = canGoPrevious) { Icon(Icons.Default.SkipPrevious, "Předchozí") }
-            Column(Modifier.weight(1f)) { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text(when { isPlaying -> "Hraje"; playbackState == Player.STATE_BUFFERING -> "Připojování…"; else -> "Pozastaveno" }, style = MaterialTheme.typography.labelSmall) }
-            IconButton(onClick = onPlayPause) { Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Přehrát / pozastavit") }
-            IconButton(onClick = onNext, enabled = canGoNext) { Icon(Icons.Default.SkipNext, "Další") }
-            IconButton(onClick = onStop) { Text("■", style = MaterialTheme.typography.titleMedium) }
-        }
-    }
+    Surface(onClick = onOpen, tonalElevation = 4.dp) { Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onPrevious, enabled = canGoPrevious) { Icon(Icons.Default.SkipPrevious, "Předchozí") }
+        Column(Modifier.weight(1f)) { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text(when { isPlaying -> "Hraje"; playbackState == Player.STATE_BUFFERING -> "Připojování…"; else -> "Pozastaveno" }, style = MaterialTheme.typography.labelSmall) }
+        IconButton(onClick = onPlayPause) { Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Přehrát / pozastavit") }
+        IconButton(onClick = onNext, enabled = canGoNext) { Icon(Icons.Default.SkipNext, "Další") }
+        IconButton(onClick = onStop) { Text("■", style = MaterialTheme.typography.titleMedium) }
+    } }
 }
 
 @Composable
@@ -358,12 +362,8 @@ private fun SettingsScreen(modifier: Modifier, preferences: android.content.Shar
     Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Nastavení", style = MaterialTheme.typography.headlineSmall)
         Text("Přehrávání", style = MaterialTheme.typography.titleMedium)
-        SettingSwitch("Spustit poslední rádio při otevření aplikace", "Přehrávání začne pouze při otevření aplikace, nikdy samo po startu telefonu.", autoStart) {
-            autoStart = it; preferences.edit().putBoolean("auto_start", it).apply()
-        }
-        SettingSwitch("Automaticky obnovit síťové rádio", "Při krátkém výpadku se přehrávač pokusí znovu připojit.", reconnect) {
-            reconnect = it; preferences.edit().putBoolean("reconnect", it).apply()
-        }
+        SettingSwitch("Spustit poslední rádio při otevření aplikace", "Přehrávání začne pouze při otevření aplikace, nikdy samo po startu telefonu.", autoStart) { autoStart = it; preferences.edit().putBoolean("auto_start", it).apply() }
+        SettingSwitch("Automaticky obnovit síťové rádio", "Při krátkém výpadku se přehrávač pokusí znovu připojit.", reconnect) { reconnect = it; preferences.edit().putBoolean("reconnect", it).apply() }
         Text("Aplikace", style = MaterialTheme.typography.titleMedium)
         Text("Open Radio & Media Player", style = MaterialTheme.typography.bodyMedium)
         Text("Přehrávání rádia i lokální hudby běží přes Media3.", style = MaterialTheme.typography.bodySmall)
@@ -372,8 +372,5 @@ private fun SettingsScreen(modifier: Modifier, preferences: android.content.Shar
 
 @Composable
 private fun SettingSwitch(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.bodyLarge); Text(description, style = MaterialTheme.typography.bodySmall) }
-        Switch(checked, onCheckedChange)
-    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.bodyLarge); Text(description, style = MaterialTheme.typography.bodySmall) }; Switch(checked, onCheckedChange) }
 }
