@@ -169,7 +169,11 @@ private fun HomeScreen(
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = controller?.currentMediaItem != null,
-                    onClick = { controller?.stop() }
+                    onClick = {
+                        controller?.stop()
+                        isPlaying = false
+                        playbackState = Player.STATE_IDLE
+                    }
                 ) {
                     Text("STOP")
                 }
