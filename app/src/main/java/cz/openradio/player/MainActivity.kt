@@ -122,7 +122,7 @@ private fun HomeScreen(modifier: Modifier = Modifier, controller: MediaControlle
         Text("Internet Radio", style = MaterialTheme.typography.labelLarge)
 
         if (currentStationName != null) {
-            Card(Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("📻 $currentStationName", style = MaterialTheme.typography.titleLarge)
                     Text(
@@ -169,23 +169,34 @@ private fun HomeScreen(modifier: Modifier = Modifier, controller: MediaControlle
 
         LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(stations, key = { it.id }) { station ->
-                Card(Modifier.fillMaxWidth(), onClick = {
-                    controller?.let { player ->
-                        RadioBrowserApi.registerClick(station.id)
-                        val item = MediaItem.Builder()
-                            .setMediaId(station.id)
-                            .setUri(station.streamUrl)
-                            .setMediaMetadata(MediaMetadata.Builder().setTitle(station.name).setArtist("Internet Radio").build())
-                            .build()
-                        if (player.currentMediaItem?.mediaId != station.id) {
-                            player.setMediaItem(item)
-                            player.prepare()
+                Card(
+                    onClick = {
+                        controller?.let { player ->
+                            RadioBrowserApi.registerClick(station.id)
+                            val item = MediaItem.Builder()
+                                .setMediaId(station.id)
+                                .setUri(station.streamUrl)
+                                .setMediaMetadata(
+                                    MediaMetadata.Builder()
+                                        .setTitle(station.name)
+                                        .setArtist("Internet Radio")
+                                        .build()
+                                )
+                                .build()
+                            if (player.currentMediaItem?.mediaId != station.id) {
+                                player.setMediaItem(item)
+                                player.prepare()
+                            }
+                            player.play()
                         }
-                        player.play()
-                    }
-                }) {
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text(if (station.id == currentStationId) "▶ ${station.name}" else station.name, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (station.id == currentStationId) "▶ ${station.name}" else station.name,
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         Text("Internet Radio", style = MaterialTheme.typography.bodySmall)
                     }
                 }
