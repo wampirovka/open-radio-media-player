@@ -349,7 +349,7 @@ private fun MiniPlayer(
                 Icon(Icons.Default.PlayArrow, contentDescription = "Přehrát / pozastavit")
             }
             IconButton(onClick = onStop) {
-                Icon(Icons.Default.Close, contentDescription = "Stop")
+                Text("■", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
