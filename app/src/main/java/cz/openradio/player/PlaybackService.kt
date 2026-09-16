@@ -23,9 +23,7 @@ class PlaybackService : MediaSessionService() {
 
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            if (isNetworkError(error)) {
-                scheduleReconnect()
-            }
+            if (isNetworkError(error)) scheduleReconnect()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -41,18 +39,16 @@ class PlaybackService : MediaSessionService() {
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000,
-                120_000,
+                15_000,
+                60_000,
                 2_500,
-                5_000
+                7_500
             )
             .build()
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(this)
-
         val player = ExoPlayer.Builder(this)
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(mediaSourceFactory)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this))
             .build()
             .apply {
                 setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
@@ -74,9 +70,7 @@ class PlaybackService : MediaSessionService() {
     private fun isNetworkError(error: androidx.media3.common.PlaybackException): Boolean {
         var cause: Throwable? = error.cause
         while (cause != null) {
-            if (cause is HttpDataSource.HttpDataSourceException || cause is IOException) {
-                return true
-            }
+            if (cause is HttpDataSource.HttpDataSourceException || cause is IOException) return true
             cause = cause.cause
         }
         return false
@@ -84,11 +78,9 @@ class PlaybackService : MediaSessionService() {
 
     private fun scheduleReconnect() {
         val player = mediaSession?.player ?: return
-
         if (!player.playWhenReady || player.currentMediaItem == null) return
 
         reconnectHandler.removeCallbacksAndMessages(null)
-
         val delayMs = when (reconnectAttempt) {
             0 -> 10_000L
             1 -> 20_000L
@@ -100,7 +92,6 @@ class PlaybackService : MediaSessionService() {
         reconnectHandler.postDelayed({
             val currentPlayer = mediaSession?.player ?: return@postDelayed
             if (!currentPlayer.playWhenReady || currentPlayer.currentMediaItem == null) return@postDelayed
-
             currentPlayer.prepare()
             currentPlayer.play()
         }, delayMs)
@@ -126,8 +117,7 @@ class PlaybackService : MediaSessionService() {
         mediaSession?.player?.play()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
-        mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onDestroy() {
         reconnectHandler.removeCallbacksAndMessages(null)
