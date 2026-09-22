@@ -17,7 +17,8 @@ let stations=[];
 let current=null;
 let reconnectAttempt=0;
 let reconnectTimer=null;
-let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null;\nlet currentTrack={title:'',artist:''};
+let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null;
+let currentTrack={title:'',artist:''};
 const customStations=loadJson('openradio.custom',[]);
 const favoriteIds=new Set(loadJson('openradio.favorites',[]));
 els.reconnect.checked=localStorage.getItem('openradio.reconnect')!=='false';
@@ -118,8 +119,8 @@ async function playStation(station){
 function updatePlayer(state){
   if(!current){els.mini.classList.add('hidden');return}
   els.mini.classList.remove('hidden');
-  els.miniTitle.textContent=current.name; els.miniState.textContent=state;
-  els.fullTitle.textContent=current.name; els.fullSubtitle.textContent='Internet Radio'; els.fullState.textContent=state;
+  els.miniTitle.textContent=currentTrack.title||current.name; els.miniState.textContent=currentTrack.artist?(currentTrack.artist+' • '+state):state;
+  els.fullTitle.textContent=currentTrack.title||current.name; els.fullSubtitle.textContent=currentTrack.artist?(currentTrack.artist+' • '+current.name):'Internet Radio'; els.fullState.textContent=state;
   const symbol=els.audio.paused?'▶':'❚❚'; els.miniPlay.textContent=symbol; els.fullPlay.textContent=symbol;
   setArtwork(els.miniLogo,current,'mini-logo'); setArtwork(els.fullArtwork,current,'full-artwork');
 }
