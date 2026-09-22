@@ -9,18 +9,23 @@ const els={
   miniPlay:document.querySelector('#miniPlayPause'), miniStop:document.querySelector('#miniStop'),
   playerDialog:document.querySelector('#playerDialog'), fullTitle:document.querySelector('#fullTitle'),
   fullSubtitle:document.querySelector('#fullSubtitle'), fullState:document.querySelector('#fullState'),
-  fullArtwork:document.querySelector('#fullArtwork'), fullPlay:document.querySelector('#fullPlayPause'),
-  addDialog:document.querySelector('#addDialog'), reconnect:document.querySelector('#reconnectToggle')
+  fullArtwork:document.querySelector('#fullArtwork'), fullPlay:document.querySelector('#fullPlayPause'), trackInfo:document.querySelector('#trackInfo'),
+  visualizer:document.querySelector('#visualizer'), addDialog:document.querySelector('#addDialog'), reconnect:document.querySelector('#reconnectToggle')
 };
 
 let stations=[];
 let current=null;
 let reconnectAttempt=0;
 let reconnectTimer=null;
+let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null;
 const customStations=loadJson('openradio.custom',[]);
 const favoriteIds=new Set(loadJson('openradio.favorites',[]));
 els.reconnect.checked=localStorage.getItem('openradio.reconnect')!=='false';
 
+function initVisualizer(){if(analyser)return true;try{audioContext=new(window.AudioContext||window.webkitAudioContext)();sourceNode=audioContext.createMediaElementSource(els.audio);analyser=audioContext.createAnalyser();analyser.fftSize=128;analyser.smoothingTimeConstant=.82;sourceNode.connect(analyser);analyser.connect(audioContext.destination);drawVisualizer();return true}catch(e){drawVisualizer();return false}}
+function drawVisualizer(){if(!els.visualizer)return;const c=els.visualizer,ctx=c.getContext('2d');const resize=()=>{const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=r.width*d;c.height=r.height*d;ctx.setTransform(d,0,0,d,0,0)};resize();window.addEventListener('resize',resize,{passive:true});const loop=()=>{const r=c.getBoundingClientRect(),w=r.width,h=r.height;ctx.clearRect(0,0,w,h);if(analyser){const a=new Uint8Array(analyser.frequencyBinCount);analyser.getByteFrequencyData(a);const bars=34,gap=3,bw=(w-(bars-1)*gap)/bars;for(let i=0;i<bars;i++){const v=(a[Math.floor(i*a.length/bars)]||0)/255,bh=Math.max(4,v*h*.86),x=i*(bw+gap),y=h-bh,g=ctx.createLinearGradient(0,y,0,h);g.addColorStop(0,'#b7a5ff');g.addColorStop(.55,'#9ee7ff');g.addColorStop(1,'rgba(158,231,255,.12)');ctx.fillStyle=g;ctx.fillRect(x,y,bw,bh)}}else{ctx.fillStyle='rgba(158,231,255,.18)';for(let i=0;i<34;i++){const bh=4+Math.abs(Math.sin(Date.now()/450+i*.8))*18;ctx.fillRect(i*7,h-bh,4,bh)}}visualizerFrame=requestAnimationFrame(loop)};if(!visualizerFrame)loop()}
+function updateTrack(title,artist){const t=(title||'').trim(),a=(artist||'').trim();els.trackInfo.textContent=t||a?[t,a].filter(Boolean).join(' • '):'Skladba a interpret nejsou ze streamu dostupné';if((t||a)&&'mediaSession'in navigator&&current)navigator.mediaSession.metadata=new MediaMetadata({title:t||current.name,artist:a||'Internet Radio',album:current.name,artwork:current.logoUrl?[{src:current.logoUrl}]:[]})}
+async function pollStreamMetadata(){clearInterval(metadataTimer);if(!current)return;metadataTimer=setInterval(async()=>{try{const r=await fetch(current.streamUrl,{cache:'no-store',headers:{'Icy-MetaData':'1'}});const n=Number(r.headers.get('icy-metaint'));if(!r.ok||!n||!r.body)return;const reader=r.body.getReader();let buf=new Uint8Array(0);const {value}=await reader.read();if(!value)return;buf=value;if(buf.length<n+1)return;const len=buf[n]*16;if(buf.length<n+1+len)return;const s=new TextDecoder('iso-8859-1').decode(buf.slice(n+1,n+1+len));const m=s.match(/StreamTitle='(.*?)';/);if(m){const p=m[1].split(' - ');updateTrack(p.length>1?p.slice(1).join(' - '):m[1],p.length>1?p[0]:'')}}catch{}},20000)}
 function loadJson(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}}
 function saveJson(key,val){localStorage.setItem(key,JSON.stringify(val))}
 function initials(name){return name.trim().split(/\s+/).slice(0,2).map(x=>x[0]?.toUpperCase()||'').join('')||'R'}
@@ -99,8 +104,8 @@ function toggleFavorite(station){
   saveJson('openradio.favorites',[...favoriteIds]); render();
 }
 async function playStation(station){
-  clearTimeout(reconnectTimer); reconnectAttempt=0; current=station;
-  els.audio.src=station.streamUrl; els.audio.load(); updatePlayer('Připojování…');
+  clearTimeout(reconnectTimer); clearInterval(metadataTimer); reconnectAttempt=0; current=station; updateTrack('',''); initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
+  els.audio.src=station.streamUrl; els.audio.load(); updatePlayer('Připojování…'); pollStreamMetadata();
   try{await els.audio.play()}catch(err){updatePlayer('Klikni na ▶ pro spuštění')}
   render();
   if('mediaSession'in navigator){
