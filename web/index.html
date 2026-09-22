@@ -1,125 +1,42 @@
 <!doctype html>
 <html lang="cs">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#101418">
-  <title>Open Radio</title>
-  <meta name="description" content="Open Radio – jednoduchý webový přehrávač internetových rádií.">
-  <link rel="stylesheet" href="styles.css">\n  <link rel="manifest" href="manifest.webmanifest">\n  <meta name="mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07080b"><title>Open Radio</title>
+<meta name="description" content="Open Radio – moderní webový přehrávač internetových rádií.">
+<link rel="stylesheet" href="styles.css"><link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div>
-        <h1>Open Radio</h1>
-        <p>Internet Radio Player</p>
-      </div>
-      <button id="addStationBtn" class="icon-btn" type="button" aria-label="Přidat rádio">＋</button>
-    </header>
-
-    <main class="content">
-      <section id="favoritesSection" class="section hidden">
-        <div class="section-head">
-          <div>
-            <h2>Oblíbená rádia</h2>
-            <p>Uložená v tomto prohlížeči</p>
-          </div>
-        </div>
-        <div id="favoritesRail" class="favorites-rail"></div>
-      </section>
-
-      <section class="section">
-        <div class="section-head split">
-          <div>
-            <h2>Objev rádia</h2>
-            <p>Česká rádia a další stanice z Radio Browser</p>
-          </div>
-          <button id="refreshBtn" class="icon-btn secondary" type="button" aria-label="Aktualizovat">↻</button>
-        </div>
-
-        <div class="search-row">
-          <label class="search-box">
-            <span>⌕</span>
-            <input id="searchInput" type="search" placeholder="Rock, Fajn, Radio…" autocomplete="off">
-          </label>
-        </div>
-
-        <div class="actions-row">
-          <button id="searchBtn" class="primary-btn" type="button">Hledat</button>
-          <button id="czechBtn" class="outline-btn" type="button">Česká rádia</button>
-        </div>
-
-        <div id="status" class="status">Načítám stanice…</div>
-        <div id="stationList" class="station-list"></div>
-      </section>
-
-      <section class="section settings">
-        <h2>Nastavení</h2>
-        <label class="setting-row">
-          <span>
-            <strong>Automaticky obnovit rádio</strong>
-            <small>Při krátkém výpadku se přehrávač zkusí znovu připojit.</small>
-          </span>
-          <input id="reconnectToggle" type="checkbox">
-        </label>
-      </section>
-    </main>
-
-    <div id="miniPlayer" class="mini-player hidden">
-      <button id="miniOpen" class="mini-main" type="button">
-        <span id="miniLogo" class="mini-logo">R</span>
-        <span class="mini-text">
-          <strong id="miniTitle">Nic se nepřehrává</strong>
-          <small id="miniState">Připraveno</small>
-        </span>
-      </button>
-      <button id="miniPlayPause" class="player-btn" type="button" aria-label="Přehrát nebo pozastavit">▶</button>
-      <button id="miniStop" class="player-btn" type="button" aria-label="Zastavit">■</button>
-    </div>
-
-    <nav class="bottom-nav" aria-label="Navigace">
-      <button class="nav-item active" type="button" data-scroll="top">⌂<span>Rádia</span></button>
-      <button class="nav-item" type="button" data-scroll="favorites">♡<span>Oblíbené</span></button>
-      <button class="nav-item" type="button" data-scroll="settings">⚙<span>Nastavení</span></button>
-    </nav>
-  </div>
-
-  <dialog id="addDialog">
-    <form id="addForm" method="dialog" class="dialog-card">
-      <div class="dialog-head">
-        <h3>Přidat rádio</h3>
-        <button class="icon-btn secondary" value="cancel" formnovalidate aria-label="Zavřít">×</button>
-      </div>
-      <label>Název rádia<input id="customName" required placeholder="Moje rádio"></label>
-      <label>URL streamu<input id="customUrl" required type="url" placeholder="https://..."></label>
-      <label>URL loga <small>(volitelné)</small><input id="customLogo" type="url" placeholder="https://..."></label>
-      <div class="dialog-actions">
-        <button class="outline-btn" value="cancel" formnovalidate>Zrušit</button>
-        <button id="saveStationBtn" class="primary-btn" value="default">Uložit</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="playerDialog" class="player-dialog">
-    <div class="full-player">
-      <div class="dialog-head">
-        <button id="closePlayer" class="icon-btn secondary" type="button" aria-label="Zavřít">×</button>
-        <h3>Přehrávač</h3>
-        <span class="spacer-btn"></span>
-      </div>
-      <div class="visualizer-wrap"><canvas id="visualizer" class="visualizer" aria-label="Audio vizualizér"></canvas><div id="fullArtwork" class="full-artwork">R</div></div>
-      <h2 id="fullTitle">Rádio</h2>
-      <p id="fullSubtitle">Internet Radio</p><p id="trackInfo" class="track-info">Skladba a interpret nejsou ze streamu dostupné</p>
-      <p id="fullState" class="full-state">Připraveno</p>
-      <div class="full-controls">
-        <button id="fullPlayPause" class="big-play" type="button">▶</button>
-        <button id="fullStop" class="player-btn large" type="button">■</button>
-      </div>
-    </div>
-  </dialog>
-
-  <audio id="audio" preload="none" crossorigin="anonymous"></audio>
-  <script src="app.js"></script>\n  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}</script>
-</body>
-</html>
+<div class="app-shell">
+<header class="topbar">
+  <div class="brand"><div class="brand-mark">▶</div><div><h1>Open Radio</h1><p>Internet Radio Player</p></div></div>
+  <button id="addStationBtn" class="icon-btn" type="button" aria-label="Přidat rádio">＋</button>
+</header>
+<main class="content">
+<section id="favoritesSection" class="section favorites-section hidden">
+  <div class="section-head"><div><h2>Oblíbená rádia</h2><p>Tvoje stanice na jednom místě</p></div></div>
+  <div id="favoritesRail" class="favorites-rail"></div>
+</section>
+<section class="section">
+  <div class="section-head split"><div><h2>Objev rádia</h2><p>Česká rádia a stanice z Radio Browser</p></div><button id="refreshBtn" class="icon-btn" type="button" aria-label="Aktualizovat">↻</button></div>
+  <div class="search-row"><label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="Hledat rádio nebo žánr…" autocomplete="off"></label></div>
+  <div class="actions-row"><button id="searchBtn" class="primary-btn" type="button">Hledat</button><button id="czechBtn" class="outline-btn" type="button">Česká rádia</button></div>
+  <div id="status" class="status">Načítám stanice…</div><div id="stationList" class="station-list"></div>
+</section>
+<section class="section settings">
+  <div class="section-head"><div><h2>Nastavení</h2><p>Přehrávání a připojení</p></div></div>
+  <label class="setting-row"><span><strong>Automaticky obnovit rádio</strong><small>Při výpadku se přehrávač zkusí znovu připojit.</small></span><input id="reconnectToggle" type="checkbox"></label>
+</section>
+</main>
+<div id="miniPlayer" class="mini-player hidden">
+<button id="miniOpen" class="mini-main" type="button"><span id="miniLogo" class="mini-logo">R</span><span class="mini-text"><strong id="miniTitle">Nic se nepřehrává</strong><small id="miniState">Připraveno</small></span></button>
+<button id="miniPlayPause" class="player-btn" type="button" aria-label="Přehrát nebo pozastavit">▶</button><button id="miniStop" class="player-btn" type="button" aria-label="Zastavit">■</button>
+</div>
+<nav class="bottom-nav" aria-label="Navigace"><button class="nav-item active" type="button" data-scroll="top">⌂<span>Rádia</span></button><button class="nav-item" type="button" data-scroll="favorites">♡<span>Oblíbené</span></button><button class="nav-item" type="button" data-scroll="settings">⚙<span>Nastavení</span></button></nav>
+</div>
+<dialog id="addDialog"><form id="addForm" method="dialog" class="dialog-card"><div class="dialog-head"><button class="icon-btn secondary" value="cancel" formnovalidate aria-label="Zavřít">×</button><h3>Přidat rádio</h3><span></span></div><label>Název rádia<input id="customName" required placeholder="Moje rádio"></label><label>URL streamu<input id="customUrl" required type="url" placeholder="https://..."></label><label>URL loga <small>(volitelné)</small><input id="customLogo" type="url" placeholder="https://..."></label><div class="dialog-actions"><button class="outline-btn" value="cancel" formnovalidate>Zrušit</button><button id="saveStationBtn" class="primary-btn" value="default">Uložit</button></div></form></dialog>
+<dialog id="playerDialog" class="player-dialog"><div class="full-player"><div class="dialog-head"><button id="closePlayer" class="icon-btn secondary" type="button" aria-label="Zavřít">×</button><h3>Právě hraje</h3><span class="spacer-btn"></span></div><div class="visualizer-wrap"><canvas id="visualizer" class="visualizer" aria-label="Audio vizualizér"></canvas><div id="fullArtwork" class="full-artwork">R</div></div><h2 id="fullTitle">Rádio</h2><p id="fullSubtitle">Internet Radio</p><p id="trackInfo" class="track-info">Skladba a interpret nejsou ze streamu dostupné</p><p id="fullState" class="full-state">Připraveno</p><div class="full-controls"><button id="fullStop" class="player-btn large" type="button">■</button><button id="fullPlayPause" class="big-play" type="button">▶</button><span class="spacer-btn"></span></div></div></dialog>
+<audio id="audio" preload="none" crossorigin="anonymous"></audio>
+<script src="app.js"></script><script>if("serviceWorker"in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}</script>
+</body></html>
