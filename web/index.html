@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101418">
   <title>Open Radio</title>
   <meta name="description" content="Open Radio – jednoduchý webový přehrávač internetových rádií.">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css">\n  <link rel="manifest" href="manifest.webmanifest">\n  <meta name="mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
   <div class="app-shell">
@@ -120,6 +120,6 @@
   </dialog>
 
   <audio id="audio" preload="none"></audio>
-  <script src="app.js"></script>
+  <script src="app.js"></script>\n  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}</script>
 </body>
 </html>
