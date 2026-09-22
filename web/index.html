@@ -108,9 +108,9 @@
         <h3>Přehrávač</h3>
         <span class="spacer-btn"></span>
       </div>
-      <div id="fullArtwork" class="full-artwork">R</div>
+      <div class="visualizer-wrap"><canvas id="visualizer" class="visualizer" aria-label="Audio vizualizér"></canvas><div id="fullArtwork" class="full-artwork">R</div></div>
       <h2 id="fullTitle">Rádio</h2>
-      <p id="fullSubtitle">Internet Radio</p>
+      <p id="fullSubtitle">Internet Radio</p><p id="trackInfo" class="track-info">Skladba a interpret nejsou ze streamu dostupné</p>
       <p id="fullState" class="full-state">Připraveno</p>
       <div class="full-controls">
         <button id="fullPlayPause" class="big-play" type="button">▶</button>
@@ -119,7 +119,7 @@
     </div>
   </dialog>
 
-  <audio id="audio" preload="none"></audio>
+  <audio id="audio" preload="none" crossorigin="anonymous"></audio>
   <script src="app.js"></script>\n  <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}</script>
 </body>
 </html>
