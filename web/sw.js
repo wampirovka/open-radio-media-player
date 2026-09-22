@@ -1,4 +1,4 @@
-const CACHE_NAME='open-radio-v1';
+const CACHE_NAME='open-radio-v2';
 const APP_SHELL=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest'];
 
 self.addEventListener('install',event=>{
