@@ -2,15 +2,15 @@
 <html lang="cs">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#07080b"><title>Open Radio</title>
-<meta name="description" content="Open Radio – moderní webový přehrávač internetových rádií.">
+<meta name="theme-color" content="#08090b"><title>Sukadio → RockPower</title>
+<meta name="description" content="Sukadio → RockPower – moderní webový přehrávač internetových rádií.">
 <link rel="stylesheet" href="styles.css"><link rel="manifest" href="manifest.webmanifest">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
 <div class="app-shell">
 <header class="topbar">
-  <div class="brand"><div class="brand-mark">▶</div><div><h1>Open Radio</h1><p>Internet Radio Player</p></div></div>
+  <div class="brand"><div class="brand-mark"><img src="icons/sukadio-logo.svg" alt=""></div><div><h1>Sukadio → RockPower</h1><p>Internet Radio Player</p></div></div>
   <button id="addStationBtn" class="icon-btn" type="button" aria-label="Přidat rádio">＋</button>
 </header>
 <main class="content">
@@ -36,7 +36,7 @@
 <nav class="bottom-nav" aria-label="Navigace"><button class="nav-item active" type="button" data-scroll="top">⌂<span>Rádia</span></button><button class="nav-item" type="button" data-scroll="favorites">♡<span>Oblíbené</span></button><button class="nav-item" type="button" data-scroll="settings">⚙<span>Nastavení</span></button></nav>
 </div>
 <dialog id="addDialog"><form id="addForm" method="dialog" class="dialog-card"><div class="dialog-head"><button class="icon-btn secondary" value="cancel" formnovalidate aria-label="Zavřít">×</button><h3>Přidat rádio</h3><span></span></div><label>Název rádia<input id="customName" required placeholder="Moje rádio"></label><label>URL streamu<input id="customUrl" required type="url" placeholder="https://..."></label><label>URL loga <small>(volitelné)</small><input id="customLogo" type="url" placeholder="https://..."></label><div class="dialog-actions"><button class="outline-btn" value="cancel" formnovalidate>Zrušit</button><button id="saveStationBtn" class="primary-btn" value="default">Uložit</button></div></form></dialog>
-<dialog id="playerDialog" class="player-dialog"><div class="full-player"><div class="dialog-head"><button id="closePlayer" class="icon-btn secondary" type="button" aria-label="Zavřít">×</button><h3>Právě hraje</h3><span class="spacer-btn"></span></div><div class="visualizer-wrap"><canvas id="visualizer" class="visualizer" aria-label="Audio vizualizér"></canvas><div id="fullArtwork" class="full-artwork">R</div></div><h2 id="fullTitle">Rádio</h2><p id="fullSubtitle">Internet Radio</p><p id="trackInfo" class="track-info">Skladba a interpret nejsou ze streamu dostupné</p><p id="fullState" class="full-state">Připraveno</p><div class="full-controls"><button id="fullStop" class="player-btn large" type="button">■</button><button id="fullPlayPause" class="big-play" type="button">▶</button><span class="spacer-btn"></span></div></div></dialog>
+<dialog id="playerDialog" class="player-dialog"><div class="full-player"><div class="dialog-head"><button id="closePlayer" class="icon-btn secondary" type="button" aria-label="Zavřít">×</button><h3>Právě hraje</h3><span class="spacer-btn"></span></div><div class="visualizer-wrap"><canvas id="visualizer" class="visualizer" aria-label="Audio vizualizér"></canvas><div id="fullArtwork" class="full-artwork"><img src="icons/sukadio-logo.svg" alt=""></div></div><h2 id="fullTitle">Sukadio → RockPower</h2><p id="fullSubtitle">Internet Radio</p><p id="trackInfo" class="track-info">Skladba a interpret nejsou ze streamu dostupné</p><p id="fullState" class="full-state">Připraveno</p><div class="full-controls"><button id="fullStop" class="player-btn large" type="button">■</button><button id="fullPlayPause" class="big-play" type="button">▶</button><span class="spacer-btn"></span></div></div></dialog>
 <audio id="audio" preload="none" crossorigin="anonymous"></audio>
 <script src="app.js"></script><script>if("serviceWorker"in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}</script>
 </body></html>
