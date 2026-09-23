@@ -1,5 +1,5 @@
-const CACHE_NAME='open-radio-v4';
-const APP_SHELL=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest'];
+const CACHE_NAME='open-radio-v5';
+const APP_SHELL=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icons/sukadio-logo.svg'];
 
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting()));
