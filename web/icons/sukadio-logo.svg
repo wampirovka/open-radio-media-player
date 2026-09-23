@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Sukadio RockPower logo">
+<rect width="512" height="512" rx="96" fill="#111116"/>
+<g fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="176" cy="196" r="82"/>
+  <circle cx="336" cy="196" r="82"/>
+  <path d="M112 266C65 294 32 342 46 375c8 20 36 21 65 5 39-22 75-59 92-92"/>
+  <path d="M400 266c47 28 80 76 66 109-8 20-36 21-65 5-39-22-75-59-92-92"/>
+  <path d="M158 287c17 55 55 92 98 92s81-37 98-92"/>
+  <path d="M242 105l14-26 14 26"/>
+  <path d="M246 286l10 25 10-25"/>
+</g>
+<g fill="#F8AD0E">
+  <circle cx="176" cy="196" r="38"/>
+  <circle cx="336" cy="196" r="38"/>
+</g>
+<g fill="#111116">
+  <circle cx="176" cy="196" r="16"/>
+  <circle cx="336" cy="196" r="16"/>
+</g>
+</svg>
