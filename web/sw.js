@@ -1,4 +1,4 @@
-const CACHE_NAME='open-radio-v5';
+const CACHE_NAME='open-radio-v6';
 const APP_SHELL=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icons/sukadio-logo.svg'];
 
 self.addEventListener('install',event=>{
