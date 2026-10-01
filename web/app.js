@@ -11,18 +11,84 @@ const els={
   fullSubtitle:document.querySelector('#fullSubtitle'), fullState:document.querySelector('#fullState'),
   fullArtwork:document.querySelector('#fullArtwork'), fullPlay:document.querySelector('#fullPlayPause'), trackInfo:document.querySelector('#trackInfo'),
   nowTitle:document.querySelector('#nowPlayingTitle'), nowArtist:document.querySelector('#nowPlayingArtist'),
-  visualizer:document.querySelector('#visualizer'), addDialog:document.querySelector('#addDialog'), reconnect:document.querySelector('#reconnectToggle')
+  visualizer:document.querySelector('#visualizer'), addDialog:document.querySelector('#addDialog'), reconnect:document.querySelector('#reconnectToggle'),
+  bufferMode:document.querySelector('#bufferMode'), bufferRange:document.querySelector('#bufferRange'), bufferValue:document.querySelector('#bufferValue'), bufferCustom:document.querySelector('#bufferCustom')
 };
 
 let stations=[];
 let current=null;
 let reconnectAttempt=0;
 let reconnectTimer=null;
-let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null;
+let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null,bufferTimer=null,bufferRecoveryTimer=null;
 let currentTrack={title:'',artist:''};
+const BUFFER_PRESETS={low:5,normal:12,stable:25,max:45};
+let adaptiveBuffer=12;
+let recoveringBuffer=false;
 const customStations=loadJson('openradio.custom',[]);
 const favoriteIds=new Set(loadJson('openradio.favorites',[]));
 els.reconnect.checked=localStorage.getItem('openradio.reconnect')!=='false';
+const savedBufferMode=localStorage.getItem('openradio.bufferMode')||'auto';
+const savedBufferRange=Math.min(60,Math.max(5,Number(localStorage.getItem('openradio.bufferRange')||20)));
+if(els.bufferMode)els.bufferMode.value=savedBufferMode;
+if(els.bufferRange)els.bufferRange.value=savedBufferRange;
+if(els.bufferValue)els.bufferValue.textContent=savedBufferRange+' s';
+function getBufferTarget(){
+  if(!els.bufferMode)return 12;
+  const mode=els.bufferMode.value;
+  if(mode==='custom')return Number(els.bufferRange?.value||20);
+  if(mode==='auto')return adaptiveBuffer;
+  return BUFFER_PRESETS[mode]||12;
+}
+function getBufferedSeconds(){
+  try{
+    const b=els.audio.buffered, t=els.audio.currentTime;
+    for(let i=0;i<b.length;i++)if(t>=b.start(i)-.25&&t<=b.end(i)+.25)return Math.max(0,b.end(i)-t);
+  }catch{}
+  return 0;
+}
+function updateBufferUI(){
+  const seconds=getBufferedSeconds(),target=getBufferTarget();
+  if(els.bufferValue)els.bufferValue.textContent=(els.bufferMode?.value==='auto'?'Auto • ':'')+Math.round(target)+' s';
+  if(current&&(!els.audio.paused||recoveringBuffer)){
+    const state=seconds>0?`Buffer ${Math.round(seconds)} / ${Math.round(target)} s`:'';
+    if(state&&els.fullState && !recoveringBuffer)els.fullState.textContent=state;
+  }
+}
+function startBufferMonitor(){
+  clearInterval(bufferTimer);
+  bufferTimer=setInterval(()=>{
+    if(!current||els.audio.paused||recoveringBuffer)return;
+    const seconds=getBufferedSeconds(),target=getBufferTarget(),low=Math.max(1.5,Math.min(6,target*.3));
+    if(els.bufferMode?.value==='auto' && seconds>target+8)adaptiveBuffer=Math.max(8,adaptiveBuffer-1);
+    if(seconds>0 && seconds<low)recoverFromLowBuffer();
+    updateBufferUI();
+  },1000);
+}
+function recoverFromLowBuffer(){
+  if(recoveringBuffer||!current)return;
+  recoveringBuffer=true;
+  const target=Math.min(getBufferTarget(),30);
+  if(els.bufferMode?.value==='auto')adaptiveBuffer=Math.min(30,adaptiveBuffer+4);
+  updatePlayer(`Slabé připojení • doplňuji buffer…`);
+  els.audio.pause();
+  const started=Date.now();
+  clearInterval(bufferRecoveryTimer);
+  bufferRecoveryTimer=setInterval(()=>{
+    if(!current){clearInterval(bufferRecoveryTimer);recoveringBuffer=false;return;}
+    const seconds=getBufferedSeconds();
+    if(seconds>=Math.min(target,8) || Date.now()-started>7000){
+      clearInterval(bufferRecoveryTimer);recoveringBuffer=false;
+      els.audio.play().catch(()=>scheduleReconnect());
+    }
+  },250);
+}
+function configureBufferUI(){
+  if(!els.bufferMode)return;
+  const custom=els.bufferMode.value==='custom';
+  els.bufferCustom?.classList.toggle('hidden',!custom);
+  if(els.bufferRange)els.bufferRange.disabled=!custom;
+  if(els.bufferValue)els.bufferValue.textContent=(custom?els.bufferRange.value+' s':els.bufferMode.options[els.bufferMode.selectedIndex]?.text||'Auto');
+}
 
 function initVisualizer(){if(analyser)return true;try{audioContext=new(window.AudioContext||window.webkitAudioContext)();sourceNode=audioContext.createMediaElementSource(els.audio);analyser=audioContext.createAnalyser();analyser.fftSize=128;analyser.smoothingTimeConstant=.82;sourceNode.connect(analyser);analyser.connect(audioContext.destination);drawVisualizer();return true}catch(e){drawVisualizer();return false}}
 function drawVisualizer(){if(!els.visualizer)return;const c=els.visualizer,ctx=c.getContext('2d');const resize=()=>{const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=r.width*d;c.height=r.height*d;ctx.setTransform(d,0,0,d,0,0)};resize();window.addEventListener('resize',resize,{passive:true});const loop=()=>{const r=c.getBoundingClientRect(),w=r.width,h=r.height;ctx.clearRect(0,0,w,h);if(analyser){const a=new Uint8Array(analyser.frequencyBinCount);analyser.getByteFrequencyData(a);const bars=34,gap=3,bw=(w-(bars-1)*gap)/bars;for(let i=0;i<bars;i++){const v=(a[Math.floor(i*a.length/bars)]||0)/255,bh=Math.max(4,v*h*.86),x=i*(bw+gap),y=h-bh,g=ctx.createLinearGradient(0,y,0,h);g.addColorStop(0,'#ffffff');g.addColorStop(.55,'#F8AD0E');g.addColorStop(1,'rgba(248,173,14,.10)');ctx.fillStyle=g;ctx.fillRect(x,y,bw,bh)}}else{ctx.fillStyle='rgba(248,173,14,.18)';for(let i=0;i<34;i++){const bh=4+Math.abs(Math.sin(Date.now()/450+i*.8))*18;ctx.fillRect(i*7,h-bh,4,bh)}}visualizerFrame=requestAnimationFrame(loop)};if(!visualizerFrame)loop()}
@@ -113,7 +179,7 @@ function toggleFavorite(station){
 }
 async function playStation(station){
   clearTimeout(reconnectTimer); clearInterval(metadataTimer); reconnectAttempt=0; current=station; currentTrack={title:'',artist:''}; updateTrack('',''); initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
-  els.audio.src=station.streamUrl; els.audio.load(); updatePlayer('Připojování…'); pollStreamMetadata();
+  els.audio.src=station.streamUrl; els.audio.load(); updatePlayer('Připojování…'); pollStreamMetadata(); startBufferMonitor();
   try{await els.audio.play()}catch(err){updatePlayer('Klikni na ▶ pro spuštění')}
   render();
   if('mediaSession'in navigator){
@@ -138,7 +204,7 @@ async function togglePlay(){
   if(els.audio.paused){try{await els.audio.play()}catch{}}
   else els.audio.pause();
 }
-function stop(){clearTimeout(reconnectTimer); els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load(); updatePlayer('Zastaveno');render()}
+function stop(){clearTimeout(reconnectTimer);clearInterval(bufferRecoveryTimer);recoveringBuffer=false; els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load(); updatePlayer('Zastaveno');render()}
 function scheduleReconnect(){
   if(!current||!els.reconnect.checked)return;
   clearTimeout(reconnectTimer);
@@ -146,7 +212,7 @@ function scheduleReconnect(){
   updatePlayer('Výpadek, nový pokus…');
   reconnectTimer=setTimeout(()=>{if(current){els.audio.src=current.streamUrl;els.audio.load();els.audio.play().catch(()=>{})}},delay);
 }
-els.audio.addEventListener('playing',()=>{reconnectAttempt=0;updatePlayer('Hraje');render()});
+els.audio.addEventListener('playing',()=>{reconnectAttempt=0;updatePlayer('Hraje');render();updateBufferUI()});
 els.audio.addEventListener('pause',()=>{if(current&&els.audio.src)updatePlayer('Pozastaveno');render()});
 els.audio.addEventListener('waiting',()=>updatePlayer('Připojování…'));
 els.audio.addEventListener('error',scheduleReconnect);
@@ -172,6 +238,9 @@ document.querySelector('#addForm').addEventListener('submit',e=>{
   saveJson('openradio.custom',customStations);els.addDialog.close();e.target.reset();stations=merged(stations);render();
 });
 els.reconnect.addEventListener('change',()=>localStorage.setItem('openradio.reconnect',String(els.reconnect.checked)));
+els.bufferMode?.addEventListener('change',()=>{localStorage.setItem('openradio.bufferMode',els.bufferMode.value);configureBufferUI();updateBufferUI()});
+els.bufferRange?.addEventListener('input',()=>{localStorage.setItem('openradio.bufferRange',String(els.bufferRange.value));configureBufferUI();updateBufferUI()});
+configureBufferUI();startBufferMonitor();
 document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));btn.classList.add('active');
   const target=btn.dataset.scroll;
