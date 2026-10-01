@@ -28,6 +28,21 @@
 <section class="section settings">
   <div class="section-head"><div><h2>Nastavení</h2><p>Přehrávání a připojení</p></div></div>
   <label class="setting-row"><span><strong>Automaticky obnovit rádio</strong><small>Při výpadku se přehrávač zkusí znovu připojit.</small></span><input id="reconnectToggle" type="checkbox"></label>
+  <div class="buffer-setting">
+    <div class="buffer-head"><span><strong>Buffer streamu</strong><small>Rezerva dat proti krátkému zpomalení internetu.</small></span><output id="bufferValue">Auto</output></div>
+    <select id="bufferMode" class="buffer-select" aria-label="Režim bufferu">
+      <option value="auto">Automaticky • přizpůsobuje se</option>
+      <option value="low">Nízký • 5 s</option>
+      <option value="normal">Normální • 12 s</option>
+      <option value="stable">Stabilní • 25 s</option>
+      <option value="max">Maximální • 45 s</option>
+      <option value="custom">Vlastní</option>
+    </select>
+    <div id="bufferCustom" class="buffer-custom hidden">
+      <input id="bufferRange" type="range" min="5" max="60" step="1" value="20" aria-label="Vlastní velikost bufferu">
+      <div class="buffer-scale"><span>5 s</span><span>60 s</span></div>
+    </div>
+  </div>
 </section>
 </main>
 <div id="miniPlayer" class="mini-player hidden">
