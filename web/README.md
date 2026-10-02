@@ -4,7 +4,7 @@ Statická webová verze Android projektu **Open Radio & Media Player**. Obsahuje
 
 ## Funkce
 
-- výchozí Fajn Rock Music
+- výchozí Rocková zábava přes HTTPS
 - česká rádia přes Radio Browser
 - vyhledávání stanic
 - oblíbené stanice v LocalStorage

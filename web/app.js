@@ -1,5 +1,11 @@
 const API='https://de1.api.radio-browser.info/json/stations/search';
-const DEFAULT_STATION={id:'fajn-rock-music',name:'Fajn Rock Music',streamUrl:'https://icecast1.play.cz/fajnrock128.mp3?1397678024622.mp3&r=375',homepageUrl:'https://www.fajnrockmusic.cz/',logoUrl:null,votes:999999,listeners:0,custom:true};
+const ROCKOVA_ZABAVA_STREAM='https://ice2.radia.cz/rockzabava128.aac';
+const STREAM_OVERRIDES=new Map([
+  ['http://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM],
+  ['https://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM]
+]);
+const DEFAULT_STATION={id:'rockova-zabava-secure',name:'Rocková zábava',streamUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:null,logoUrl:null,votes:999999,listeners:0,custom:true};
+const MAX_RECONNECT_ATTEMPTS=4;
 
 const els={
   audio:document.querySelector('#audio'), list:document.querySelector('#stationList'), status:document.querySelector('#status'),
@@ -24,6 +30,9 @@ let currentTrack={title:'',artist:''};
 const BUFFER_PRESETS={low:5,normal:12,stable:25,max:45};
 let adaptiveBuffer=12;
 let recoveringBuffer=false;
+let reconnectEligible=false;
+let userPaused=false;
+const metadataUnavailable=new Set();
 const customStations=loadJson('openradio.custom',[]);
 const favoriteIds=new Set(loadJson('openradio.favorites',[]));
 els.reconnect.checked=localStorage.getItem('openradio.reconnect')!=='false';
@@ -64,6 +73,10 @@ function startBufferMonitor(){
     updateBufferUI();
   },1000);
 }
+function stopBufferMonitor(){
+  clearInterval(bufferTimer);
+  bufferTimer=null;
+}
 function recoverFromLowBuffer(){
   if(recoveringBuffer||!current)return;
   recoveringBuffer=true;
@@ -97,9 +110,28 @@ function updateTrack(title,artist){const t=(title||'').trim(),a=(artist||'').tri
   if(els.nowArtist)els.nowArtist.textContent=a||(t?'Interpret není ve streamu uveden':'Vyber rádio pro spuštění');
   if(current){els.miniTitle.textContent=t||current.name;els.miniState.textContent=a?(a+' • '+current.name):('Hraje • '+current.name);els.fullTitle.textContent=t||current.name;els.fullSubtitle.textContent=a?(a+' • '+current.name):'Internet Radio'}if((t||a)&&'mediaSession'in navigator&&current)navigator.mediaSession.metadata=new MediaMetadata({title:t||current.name,artist:a||'Internet Radio',album:current.name,artwork:current.logoUrl?[{src:current.logoUrl}]:[]})}
 function parseStreamTitle(raw){const value=(raw||'').trim();if(!value)return {title:'',artist:''};const clean=value.replace(/\\s+/g,' ').trim().replace(/^['"]|['"]$/g,'');let p=clean.split(/\s+[-–—]\s+/);if(p.length>1){const artist=p.shift().trim(),title=p.join(' - ').trim();return {title,artist}}return {title:clean,artist:''}}
-async function readMetadataDirect(url){const r=await fetch(url,{cache:'no-store',headers:{'Icy-MetaData':'1'}});const n=Number(r.headers.get('icy-metaint'));if(!r.ok||!n||!r.body)throw new Error('ICY metadata není dostupná');const reader=r.body.getReader();let buf=new Uint8Array(0);for(let i=0;i<12;i++){const part=await reader.read();if(part.done)break;if(part.value){const next=new Uint8Array(buf.length+part.value.length);next.set(buf);next.set(part.value,buf.length);buf=next}if(buf.length>=n+1){const len=buf[n]*16;if(buf.length>=n+1+len){const s=new TextDecoder('iso-8859-1').decode(buf.slice(n+1,n+1+len));const m=s.match(/StreamTitle='(.*?)';/);if(m)return parseStreamTitle(m[1])}}}throw new Error('ICY metadata se nepodařilo přečíst')}
-async function readMetadata(url){try{return await readMetadataDirect(url)}catch{const r=await fetch('metadata.php?url='+encodeURIComponent(url),{cache:'no-store'});if(!r.ok)throw new Error('Metadata proxy selhala');return await r.json()}}
-async function pollStreamMetadata(){clearInterval(metadataTimer);if(!current)return;const read=async()=>{try{const meta=await readMetadata(current.streamUrl);if(meta?.title||meta?.artist)updateTrack(meta.title,meta.artist)}catch{}};read();metadataTimer=setInterval(read,15000)}
+async function readMetadata(url){
+  const r=await fetch('metadata.php?url='+encodeURIComponent(url),{cache:'no-store'});
+  if(!r.ok)throw new Error('Metadata proxy selhala');
+  return r.json();
+}
+function stopMetadataPolling(){clearInterval(metadataTimer);metadataTimer=null}
+function pollStreamMetadata(){
+  stopMetadataPolling();
+  const url=current?.streamUrl;
+  if(!url||metadataUnavailable.has(url))return;
+  const read=async()=>{
+    try{
+      const meta=await readMetadata(url);
+      if(current?.streamUrl===url&&(meta?.title||meta?.artist))updateTrack(meta.title,meta.artist);
+    }catch{
+      metadataUnavailable.add(url);
+      stopMetadataPolling();
+    }
+  };
+  read();
+  metadataTimer=setInterval(read,15000);
+}
 function loadJson(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}}
 function saveJson(key,val){localStorage.setItem(key,JSON.stringify(val))}
 function initials(name){return name.trim().split(/\s+/).slice(0,2).map(x=>x[0]?.toUpperCase()||'').join('')||'R'}
@@ -113,9 +145,13 @@ function stationLogo(station,cls='logo'){
   return div;
 }
 function normalize(item){
-  const url=item.url_resolved||item.url;
+  const url=resolveStreamUrl(item.url_resolved||item.url);
   if(!item.stationuuid||!item.name||!/^https?:\/\//.test(url||''))return null;
   return {id:item.stationuuid,name:item.name.trim(),streamUrl:url,homepageUrl:item.homepage||null,logoUrl:item.favicon||null,votes:item.votes||0,listeners:item.clickcount||0};
+}
+function resolveStreamUrl(url){return STREAM_OVERRIDES.get(url)||url}
+function isBlockedMixedContent(url){
+  try{return location.protocol==='https:'&&new URL(url,location.href).protocol==='http:'}catch{return true}
 }
 function merged(apiStations){
   const map=new Map();
@@ -178,9 +214,16 @@ function toggleFavorite(station){
   saveJson('openradio.favorites',[...favoriteIds]); render();
 }
 async function playStation(station){
-  clearTimeout(reconnectTimer); clearInterval(metadataTimer); reconnectAttempt=0; current=station; currentTrack={title:'',artist:''}; updateTrack('',''); initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
-  els.audio.src=station.streamUrl; els.audio.load(); updatePlayer('Připojování…'); pollStreamMetadata(); startBufferMonitor();
-  try{await els.audio.play()}catch(err){updatePlayer('Klikni na ▶ pro spuštění')}
+  clearTimeout(reconnectTimer); reconnectTimer=null; stopMetadataPolling(); stopBufferMonitor(); clearInterval(bufferRecoveryTimer); recoveringBuffer=false;
+  reconnectAttempt=0; reconnectEligible=false; userPaused=false; current={...station,streamUrl:resolveStreamUrl(station.streamUrl)}; currentTrack={title:'',artist:''}; updateTrack('','');
+  if(isBlockedMixedContent(current.streamUrl)){
+    els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load();
+    updatePlayer('Tento stream není přes HTTPS dostupný'); render();
+    return;
+  }
+  initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
+  els.audio.src=current.streamUrl; els.audio.load(); updatePlayer('Připojování…');
+  try{await els.audio.play()}catch{updatePlayer('Stream se nepodařilo spustit')}
   render();
   if('mediaSession'in navigator){
     navigator.mediaSession.metadata=new MediaMetadata({title:station.name,artist:'Internet Radio',artwork:station.logoUrl?[{src:station.logoUrl}]:[]});
@@ -201,19 +244,25 @@ function setArtwork(el,station,cls){
 }
 async function togglePlay(){
   if(!current)return;
-  if(els.audio.paused){try{await els.audio.play()}catch{}}
-  else els.audio.pause();
+  if(els.audio.paused){userPaused=false;try{await els.audio.play()}catch{}}
+  else {userPaused=true;els.audio.pause();}
 }
-function stop(){clearTimeout(reconnectTimer);clearInterval(bufferRecoveryTimer);recoveringBuffer=false; els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load(); updatePlayer('Zastaveno');render()}
+function stop(){clearTimeout(reconnectTimer);reconnectTimer=null;stopMetadataPolling();stopBufferMonitor();clearInterval(bufferRecoveryTimer);recoveringBuffer=false;reconnectEligible=false;userPaused=true;els.audio.pause();els.audio.removeAttribute('src');els.audio.load();updatePlayer('Zastaveno');render()}
 function scheduleReconnect(){
-  if(!current||!els.reconnect.checked)return;
+  if(!current||!els.reconnect.checked||!reconnectEligible||userPaused||isBlockedMixedContent(current.streamUrl))return;
+  if(reconnectTimer)return;
+  if(reconnectAttempt>=MAX_RECONNECT_ATTEMPTS){updatePlayer('Stream není dostupný');return}
   clearTimeout(reconnectTimer);
   const delays=[10000,20000,30000,60000],delay=delays[Math.min(reconnectAttempt,3)]; reconnectAttempt++;
   updatePlayer('Výpadek, nový pokus…');
-  reconnectTimer=setTimeout(()=>{if(current){els.audio.src=current.streamUrl;els.audio.load();els.audio.play().catch(()=>{})}},delay);
+  reconnectTimer=setTimeout(()=>{
+    reconnectTimer=null;
+    if(!current||userPaused||isBlockedMixedContent(current.streamUrl))return;
+    els.audio.src=current.streamUrl;els.audio.load();els.audio.play().catch(scheduleReconnect);
+  },delay);
 }
-els.audio.addEventListener('playing',()=>{reconnectAttempt=0;updatePlayer('Hraje');render();updateBufferUI()});
-els.audio.addEventListener('pause',()=>{if(current&&els.audio.src)updatePlayer('Pozastaveno');render()});
+els.audio.addEventListener('playing',()=>{reconnectEligible=true;reconnectAttempt=0;updatePlayer('Hraje');render();updateBufferUI();pollStreamMetadata();startBufferMonitor()});
+els.audio.addEventListener('pause',()=>{if(!recoveringBuffer)stopBufferMonitor();if(current&&els.audio.src)updatePlayer('Pozastaveno');render()});
 els.audio.addEventListener('waiting',()=>updatePlayer('Připojování…'));
 els.audio.addEventListener('error',scheduleReconnect);
 els.miniPlay.addEventListener('click',togglePlay);els.fullPlay.addEventListener('click',togglePlay);
@@ -240,7 +289,7 @@ document.querySelector('#addForm').addEventListener('submit',e=>{
 els.reconnect.addEventListener('change',()=>localStorage.setItem('openradio.reconnect',String(els.reconnect.checked)));
 els.bufferMode?.addEventListener('change',()=>{localStorage.setItem('openradio.bufferMode',els.bufferMode.value);configureBufferUI();updateBufferUI()});
 els.bufferRange?.addEventListener('input',()=>{localStorage.setItem('openradio.bufferRange',String(els.bufferRange.value));configureBufferUI();updateBufferUI()});
-configureBufferUI();startBufferMonitor();
+configureBufferUI();
 document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));btn.classList.add('active');
   const target=btn.dataset.scroll;
