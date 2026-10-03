@@ -4,7 +4,7 @@ const STREAM_OVERRIDES=new Map([
   ['http://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM],
   ['https://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM]
 ]);
-const DEFAULT_STATION={id:'rockova-zabava-secure',name:'RockovĂˇ zĂˇbava',streamUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:null,logoUrl:null,votes:999999,listeners:0,custom:true};
+const DEFAULT_STATION={id:'rockova-zabava-secure',name:'Rocková zábava',streamUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:null,logoUrl:null,votes:999999,listeners:0,custom:true};
 const MAX_RECONNECT_ATTEMPTS=4;
 
 const els={
@@ -57,7 +57,7 @@ function getBufferedSeconds(){
 }
 function updateBufferUI(){
   const seconds=getBufferedSeconds(),target=getBufferTarget();
-  if(els.bufferValue)els.bufferValue.textContent=(els.bufferMode?.value==='auto'?'Auto â€˘ ':'')+Math.round(target)+' s';
+  if(els.bufferValue)els.bufferValue.textContent=(els.bufferMode?.value==='auto'?'Auto • ':'')+Math.round(target)+' s';
   if(current&&(!els.audio.paused||recoveringBuffer)){
     const state=seconds>0?`Buffer ${Math.round(seconds)} / ${Math.round(target)} s`:'';
     if(state&&els.fullState && !recoveringBuffer)els.fullState.textContent=state;
@@ -82,7 +82,7 @@ function recoverFromLowBuffer(){
   recoveringBuffer=true;
   const target=Math.min(getBufferTarget(),30);
   if(els.bufferMode?.value==='auto')adaptiveBuffer=Math.min(30,adaptiveBuffer+4);
-  updatePlayer(`SlabĂ© pĹ™ipojenĂ­ â€˘ doplĹuji bufferâ€¦`);
+  updatePlayer(`Slabé připojení • doplňuji buffer…`);
   els.audio.pause();
   const started=Date.now();
   clearInterval(bufferRecoveryTimer);
@@ -105,10 +105,10 @@ function configureBufferUI(){
 
 function initVisualizer(){if(analyser)return true;try{audioContext=new(window.AudioContext||window.webkitAudioContext)();sourceNode=audioContext.createMediaElementSource(els.audio);analyser=audioContext.createAnalyser();analyser.fftSize=128;analyser.smoothingTimeConstant=.82;sourceNode.connect(analyser);analyser.connect(audioContext.destination);drawVisualizer();return true}catch(e){drawVisualizer();return false}}
 function drawVisualizer(){if(!els.visualizer)return;const c=els.visualizer,ctx=c.getContext('2d');const resize=()=>{const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=r.width*d;c.height=r.height*d;ctx.setTransform(d,0,0,d,0,0)};resize();window.addEventListener('resize',resize,{passive:true});const loop=()=>{const r=c.getBoundingClientRect(),w=r.width,h=r.height;ctx.clearRect(0,0,w,h);if(analyser){const a=new Uint8Array(analyser.frequencyBinCount);analyser.getByteFrequencyData(a);const bars=34,gap=3,bw=(w-(bars-1)*gap)/bars;for(let i=0;i<bars;i++){const v=(a[Math.floor(i*a.length/bars)]||0)/255,bh=Math.max(4,v*h*.86),x=i*(bw+gap),y=h-bh,g=ctx.createLinearGradient(0,y,0,h);g.addColorStop(0,'#ffffff');g.addColorStop(.55,'#F8AD0E');g.addColorStop(1,'rgba(248,173,14,.10)');ctx.fillStyle=g;ctx.fillRect(x,y,bw,bh)}}else{ctx.fillStyle='rgba(248,173,14,.18)';for(let i=0;i<34;i++){const bh=4+Math.abs(Math.sin(Date.now()/450+i*.8))*18;ctx.fillRect(i*7,h-bh,4,bh)}}visualizerFrame=requestAnimationFrame(loop)};if(!visualizerFrame)loop()}
-function updateTrack(title,artist){const t=(title||'').trim(),a=(artist||'').trim();currentTrack={title:t,artist:a};const label=[t,a].filter(Boolean).join(' â€˘ ');els.trackInfo.textContent=label||'Skladba a interpret nejsou ze streamu dostupnĂ©';
+function updateTrack(title,artist){const t=(title||'').trim(),a=(artist||'').trim();currentTrack={title:t,artist:a};const label=[t,a].filter(Boolean).join(' • ');els.trackInfo.textContent=label||'Skladba a interpret nejsou ze streamu dostupné';
   if(els.nowTitle)els.nowTitle.textContent=t||(current?.name||'Sukadio â†’ RockPower');
-  if(els.nowArtist)els.nowArtist.textContent=a||(t?'Interpret nenĂ­ ve streamu uveden':'Vyber rĂˇdio pro spuĹˇtÄ›nĂ­');
-  if(current){els.miniTitle.textContent=t||current.name;els.miniState.textContent=a?(a+' â€˘ '+current.name):('Hraje â€˘ '+current.name);els.fullTitle.textContent=t||current.name;els.fullSubtitle.textContent=a?(a+' â€˘ '+current.name):'Internet Radio'}if((t||a)&&'mediaSession'in navigator&&current)navigator.mediaSession.metadata=new MediaMetadata({title:t||current.name,artist:a||'Internet Radio',album:current.name,artwork:current.logoUrl?[{src:current.logoUrl}]:[]})}
+  if(els.nowArtist)els.nowArtist.textContent=a||(t?'Interpret není ve streamu uveden':'Vyber rádio pro spuštění');
+  if(current){els.miniTitle.textContent=t||current.name;els.miniState.textContent=a?(a+' • '+current.name):('Hraje • '+current.name);els.fullTitle.textContent=t||current.name;els.fullSubtitle.textContent=a?(a+' • '+current.name):'Internet Radio'}if((t||a)&&'mediaSession'in navigator&&current)navigator.mediaSession.metadata=new MediaMetadata({title:t||current.name,artist:a||'Internet Radio',album:current.name,artwork:current.logoUrl?[{src:current.logoUrl}]:[]})}
 function parseStreamTitle(raw){const value=(raw||'').trim();if(!value)return {title:'',artist:''};const clean=value.replace(/\\s+/g,' ').trim().replace(/^['"]|['"]$/g,'');let p=clean.split(/\s+[-â€“â€”]\s+/);if(p.length>1){const artist=p.shift().trim(),title=p.join(' - ').trim();return {title,artist}}return {title:clean,artist:''}}
 async function readMetadata(url){
   const r=await fetch('metadata.php?url='+encodeURIComponent(url),{cache:'no-store'});
@@ -159,7 +159,7 @@ function merged(apiStations){
   return [...map.values()];
 }
 async function loadStations(query=''){
-  els.status.textContent='NaÄŤĂ­tĂˇm staniceâ€¦';
+  els.status.textContent='Načítám stanice…';
   try{
     const params=new URLSearchParams({hidebroken:'true',order:'votes',reverse:'true',limit:'50'});
     if(query.trim())params.set('name',query.trim()); else params.set('countrycode','CZ');
@@ -173,7 +173,7 @@ async function loadStations(query=''){
   }catch(err){
     stations=merged([]);
     render();
-    els.status.textContent='NepodaĹ™ilo se aktualizovat stanice. Zobrazuji uloĹľenĂˇ a vĂ˝chozĂ­ rĂˇdia.';
+    els.status.textContent='Nepodařilo se aktualizovat stanice. Zobrazuji uložená a výchozí rádia.';
   }
 }
 function render(){
@@ -187,9 +187,9 @@ function renderStations(){
     row.append(stationLogo(station));
     const meta=document.createElement('div'); meta.className='station-meta';
     const title=document.createElement('strong'); title.textContent=station.name;
-    const sub=document.createElement('small'); sub.textContent=current?.id===station.id?(els.audio.paused?'Pozastaveno':'â–¶ Hraje'):(station.custom?'VlastnĂ­ / vĂ˝chozĂ­ stanice':'Internet Radio');
+    const sub=document.createElement('small'); sub.textContent=current?.id===station.id?(els.audio.paused?'Pozastaveno':'▶ Hraje'):(station.custom?'Vlastní / výchozí stanice':'Internet Radio');
     meta.append(title,sub);
-    const fav=document.createElement('button'); fav.className='fav-btn'+(favoriteIds.has(station.id)?' on':''); fav.type='button'; fav.textContent=favoriteIds.has(station.id)?'â™Ą':'â™ˇ'; fav.title='OblĂ­benĂ©';
+    const fav=document.createElement('button'); fav.className='fav-btn'+(favoriteIds.has(station.id)?' on':''); fav.type='button'; fav.textContent=favoriteIds.has(station.id)?'♥':'♡'; fav.title='Oblíbené';
     fav.addEventListener('click',e=>{e.stopPropagation();toggleFavorite(station)});
     row.append(meta,fav);
     row.addEventListener('click',()=>playStation(station));
@@ -205,7 +205,7 @@ function renderFavorites(){
     const card=document.createElement('button'); card.className='favorite-card'; card.type='button';
     card.append(stationLogo(station,'favorite-logo'));
     const title=document.createElement('strong'); title.textContent=station.name;
-    const sub=document.createElement('small'); sub.textContent=current?.id===station.id&&!els.audio.paused?'â–¶ Hraje':'â–¶ PĹ™ehrĂˇt';
+    const sub=document.createElement('small'); sub.textContent=current?.id===station.id&&!els.audio.paused?'▶ Hraje':'▶ Přehrát';
     card.append(title,sub); card.addEventListener('click',()=>playStation(station)); els.favoritesRail.append(card);
   });
 }
@@ -218,12 +218,12 @@ async function playStation(station){
   reconnectAttempt=0; reconnectEligible=false; userPaused=false; current={...station,streamUrl:resolveStreamUrl(station.streamUrl)}; currentTrack={title:'',artist:''}; updateTrack('','');
   if(isBlockedMixedContent(current.streamUrl)){
     els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load();
-    updatePlayer('Tento stream nenĂ­ pĹ™es HTTPS dostupnĂ˝'); render();
+    updatePlayer('Tento stream není přes HTTPS dostupný'); render();
     return;
   }
   initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
-  els.audio.src=current.streamUrl; els.audio.load(); updatePlayer('PĹ™ipojovĂˇnĂ­â€¦');
-  try{await els.audio.play()}catch{updatePlayer('Stream se nepodaĹ™ilo spustit')}
+  els.audio.src=current.streamUrl; els.audio.load(); updatePlayer('Připojování…');
+  try{await els.audio.play()}catch{updatePlayer('Stream se nepodařilo spustit')}
   render();
   if('mediaSession'in navigator){
     navigator.mediaSession.metadata=new MediaMetadata({title:station.name,artist:'Internet Radio',artwork:station.logoUrl?[{src:station.logoUrl}]:[]});
@@ -232,8 +232,8 @@ async function playStation(station){
 function updatePlayer(state){
   if(!current){els.mini.classList.add('hidden');return}
   els.mini.classList.remove('hidden');
-  els.miniTitle.textContent=currentTrack.title||current.name; els.miniState.textContent=currentTrack.artist?(currentTrack.artist+' â€˘ '+state):state;
-  els.fullTitle.textContent=currentTrack.title||current.name; els.fullSubtitle.textContent=currentTrack.artist?(currentTrack.artist+' â€˘ '+current.name):'Internet Radio'; els.fullState.textContent=state;
+  els.miniTitle.textContent=currentTrack.title||current.name; els.miniState.textContent=currentTrack.artist?(currentTrack.artist+' • '+state):state;
+  els.fullTitle.textContent=currentTrack.title||current.name; els.fullSubtitle.textContent=currentTrack.artist?(currentTrack.artist+' • '+current.name):'Internet Radio'; els.fullState.textContent=state;
   const symbol=els.audio.paused?'â–¶':'âťšâťš'; els.miniPlay.textContent=symbol; els.fullPlay.textContent=symbol;
   setArtwork(els.miniLogo,current,'mini-logo'); setArtwork(els.fullArtwork,current,'full-artwork');
 }
@@ -251,10 +251,10 @@ function stop(){clearTimeout(reconnectTimer);reconnectTimer=null;stopMetadataPol
 function scheduleReconnect(){
   if(!current||!els.reconnect.checked||!reconnectEligible||userPaused||isBlockedMixedContent(current.streamUrl))return;
   if(reconnectTimer)return;
-  if(reconnectAttempt>=MAX_RECONNECT_ATTEMPTS){updatePlayer('Stream nenĂ­ dostupnĂ˝');return}
+  if(reconnectAttempt>=MAX_RECONNECT_ATTEMPTS){updatePlayer('Stream není dostupný');return}
   clearTimeout(reconnectTimer);
   const delays=[10000,20000,30000,60000],delay=delays[Math.min(reconnectAttempt,3)]; reconnectAttempt++;
-  updatePlayer('VĂ˝padek, novĂ˝ pokusâ€¦');
+  updatePlayer('Výpadek, nový pokus…');
   reconnectTimer=setTimeout(()=>{
     reconnectTimer=null;
     if(!current||userPaused||isBlockedMixedContent(current.streamUrl))return;
@@ -263,7 +263,7 @@ function scheduleReconnect(){
 }
 els.audio.addEventListener('playing',()=>{reconnectEligible=true;reconnectAttempt=0;updatePlayer('Hraje');render();updateBufferUI();pollStreamMetadata();startBufferMonitor()});
 els.audio.addEventListener('pause',()=>{if(!recoveringBuffer)stopBufferMonitor();if(current&&els.audio.src)updatePlayer('Pozastaveno');render()});
-els.audio.addEventListener('waiting',()=>updatePlayer('PĹ™ipojovĂˇnĂ­â€¦'));
+els.audio.addEventListener('waiting',()=>updatePlayer('Připojování…'));
 els.audio.addEventListener('error',scheduleReconnect);
 els.miniPlay.addEventListener('click',togglePlay);els.fullPlay.addEventListener('click',togglePlay);
 els.miniStop.addEventListener('click',stop);document.querySelector('#fullStop').addEventListener('click',stop);
