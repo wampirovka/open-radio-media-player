@@ -106,10 +106,10 @@ function configureBufferUI(){
 function initVisualizer(){if(analyser)return true;try{audioContext=new(window.AudioContext||window.webkitAudioContext)();sourceNode=audioContext.createMediaElementSource(els.audio);analyser=audioContext.createAnalyser();analyser.fftSize=128;analyser.smoothingTimeConstant=.82;sourceNode.connect(analyser);analyser.connect(audioContext.destination);drawVisualizer();return true}catch(e){drawVisualizer();return false}}
 function drawVisualizer(){if(!els.visualizer)return;const c=els.visualizer,ctx=c.getContext('2d');const resize=()=>{const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=r.width*d;c.height=r.height*d;ctx.setTransform(d,0,0,d,0,0)};resize();window.addEventListener('resize',resize,{passive:true});const loop=()=>{const r=c.getBoundingClientRect(),w=r.width,h=r.height;ctx.clearRect(0,0,w,h);if(analyser){const a=new Uint8Array(analyser.frequencyBinCount);analyser.getByteFrequencyData(a);const bars=34,gap=3,bw=(w-(bars-1)*gap)/bars;for(let i=0;i<bars;i++){const v=(a[Math.floor(i*a.length/bars)]||0)/255,bh=Math.max(4,v*h*.86),x=i*(bw+gap),y=h-bh,g=ctx.createLinearGradient(0,y,0,h);g.addColorStop(0,'#ffffff');g.addColorStop(.55,'#F8AD0E');g.addColorStop(1,'rgba(248,173,14,.10)');ctx.fillStyle=g;ctx.fillRect(x,y,bw,bh)}}else{ctx.fillStyle='rgba(248,173,14,.18)';for(let i=0;i<34;i++){const bh=4+Math.abs(Math.sin(Date.now()/450+i*.8))*18;ctx.fillRect(i*7,h-bh,4,bh)}}visualizerFrame=requestAnimationFrame(loop)};if(!visualizerFrame)loop()}
 function updateTrack(title,artist){const t=(title||'').trim(),a=(artist||'').trim();currentTrack={title:t,artist:a};const label=[t,a].filter(Boolean).join(' • ');els.trackInfo.textContent=label||'Skladba a interpret nejsou ze streamu dostupné';
-  if(els.nowTitle)els.nowTitle.textContent=t||(current?.name||'Sukadio â†’ RockPower');
+  if(els.nowTitle)els.nowTitle.textContent=t||(current?.name||'Sukadio → RockPower');
   if(els.nowArtist)els.nowArtist.textContent=a||(t?'Interpret není ve streamu uveden':'Vyber rádio pro spuštění');
   if(current){els.miniTitle.textContent=t||current.name;els.miniState.textContent=a?(a+' • '+current.name):('Hraje • '+current.name);els.fullTitle.textContent=t||current.name;els.fullSubtitle.textContent=a?(a+' • '+current.name):'Internet Radio'}if((t||a)&&'mediaSession'in navigator&&current)navigator.mediaSession.metadata=new MediaMetadata({title:t||current.name,artist:a||'Internet Radio',album:current.name,artwork:current.logoUrl?[{src:current.logoUrl}]:[]})}
-function parseStreamTitle(raw){const value=(raw||'').trim();if(!value)return {title:'',artist:''};const clean=value.replace(/\\s+/g,' ').trim().replace(/^['"]|['"]$/g,'');let p=clean.split(/\s+[-â€“â€”]\s+/);if(p.length>1){const artist=p.shift().trim(),title=p.join(' - ').trim();return {title,artist}}return {title:clean,artist:''}}
+function parseStreamTitle(raw){const value=(raw||'').trim();if(!value)return {title:'',artist:''};const clean=value.replace(/\\s+/g,' ').trim().replace(/^['"]|['"]$/g,'');let p=clean.split(/\s+[-–—]\s+/);if(p.length>1){const artist=p.shift().trim(),title=p.join(' - ').trim();return {title,artist}}return {title:clean,artist:''}}
 async function readMetadata(url){
   const r=await fetch('metadata.php?url='+encodeURIComponent(url),{cache:'no-store'});
   if(!r.ok)throw new Error('Metadata proxy selhala');
@@ -234,7 +234,7 @@ function updatePlayer(state){
   els.mini.classList.remove('hidden');
   els.miniTitle.textContent=currentTrack.title||current.name; els.miniState.textContent=currentTrack.artist?(currentTrack.artist+' • '+state):state;
   els.fullTitle.textContent=currentTrack.title||current.name; els.fullSubtitle.textContent=currentTrack.artist?(currentTrack.artist+' • '+current.name):'Internet Radio'; els.fullState.textContent=state;
-  const symbol=els.audio.paused?'â–¶':'âťšâťš'; els.miniPlay.textContent=symbol; els.fullPlay.textContent=symbol;
+  const symbol=els.audio.paused?'▶':'❚❚'; els.miniPlay.textContent=symbol; els.fullPlay.textContent=symbol;
   setArtwork(els.miniLogo,current,'mini-logo'); setArtwork(els.fullArtwork,current,'full-artwork');
 }
 function setArtwork(el,station,cls){
