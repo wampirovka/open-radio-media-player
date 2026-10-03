@@ -1,4 +1,4 @@
-const CACHE_NAME='open-radio-v6';
+const CACHE_NAME='open-radio-v7';
 const APP_SHELL=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icons/sukadio-logo.svg'];
 
 self.addEventListener('install',event=>{
@@ -14,16 +14,21 @@ self.addEventListener('activate',event=>{
 self.addEventListener('fetch',event=>{
   const url=new URL(event.request.url);
   if(url.origin!==self.location.origin)return;
+  const fetchAndCache=()=>fetch(event.request).then(response=>{
+    if(event.request.method==='GET' && response.ok){
+      const copy=response.clone();
+      caches.open(CACHE_NAME).then(cache=>cache.put(event.request,copy));
+    }
+    return response;
+  });
+  if(['document','script','style'].includes(event.request.destination)){
+    event.respondWith(fetchAndCache().catch(()=>caches.match(event.request)));
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then(cached=>{
       if(cached)return cached;
-      return fetch(event.request).then(response=>{
-        if(event.request.method==='GET' && response.ok){
-          const copy=response.clone();
-          caches.open(CACHE_NAME).then(cache=>cache.put(event.request,copy));
-        }
-        return response;
-      });
+      return fetchAndCache();
     })
   );
 });
