@@ -113,8 +113,8 @@ function pollStreamMetadata(){
       const meta=await readMetadata(url);
       if(current?.streamUrl===url&&(meta?.title||meta?.artist))updateTrack(meta.title,meta.artist);
     }catch{
-      metadataUnavailable.add(url);
-      stopMetadataPolling();
+      // Metadata can be temporarily absent or the station may send an empty ICY block.
+      // Keep polling instead of permanently disabling metadata for this station.
     }
   };
   read();
