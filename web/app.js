@@ -113,7 +113,7 @@ function pollStreamMetadata(){
   const read=async()=>{
     try{
       const meta=await readMetadata(url);
-      if(current?.streamUrl===url&&(meta?.title||meta?.artist))updateTrack(meta.title,meta.artist);
+      if(current&&(current.metadataUrl||current.streamUrl)===url&&(meta?.title||meta?.artist))updateTrack(meta.title,meta.artist);
     }catch{
       // Metadata can be temporarily absent or the station may send an empty ICY block.
       // Keep polling instead of permanently disabling metadata for this station.
@@ -214,11 +214,6 @@ function toggleFavorite(station){
 async function playStation(station){
   clearTimeout(reconnectTimer); reconnectTimer=null; clearTimeout(stallTimer); stallTimer=null; stopMetadataPolling(); stopBufferMonitor(); clearInterval(bufferRecoveryTimer); recoveringBuffer=false;
   reconnectAttempt=0; reconnectEligible=false; userPaused=false; current={...station,metadataUrl:station.metadataUrl||station.streamUrl,streamUrl:resolveStreamUrl(station.streamUrl)}; currentTrack={title:'',artist:''}; updateTrack('','');
-  if(isBlockedMixedContent(current.streamUrl)){
-    els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load();
-    updatePlayer('Tento stream není přes HTTPS dostupný'); render();
-    return;
-  }
   initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
   els.audio.preload='auto';
   els.audio.src=current.streamUrl; els.audio.load(); reconnectEligible=true; updatePlayer('Připojování…');
@@ -248,7 +243,7 @@ async function togglePlay(){
 }
 function stop(){clearTimeout(reconnectTimer);reconnectTimer=null;clearTimeout(stallTimer);stallTimer=null;stopMetadataPolling();stopBufferMonitor();clearInterval(bufferRecoveryTimer);recoveringBuffer=false;reconnectEligible=false;userPaused=true;els.audio.pause();els.audio.removeAttribute('src');els.audio.load();updatePlayer('Zastaveno');render()}
 function scheduleReconnect(){
-  if(!current||!els.reconnect.checked||!reconnectEligible||userPaused||isBlockedMixedContent(current.streamUrl))return;
+  if(!current||!els.reconnect.checked||!reconnectEligible||userPaused)return;
   if(reconnectTimer)return;
   if(reconnectAttempt>=MAX_RECONNECT_ATTEMPTS){reconnectAttempt=0;}
   clearTimeout(reconnectTimer);
@@ -256,7 +251,7 @@ function scheduleReconnect(){
   reconnecting=true; updatePlayer('Výpadek, znovu připojuji…');
   reconnectTimer=setTimeout(()=>{
     reconnectTimer=null;
-    if(!current||userPaused||isBlockedMixedContent(current.streamUrl))return;
+    if(!current||userPaused)return;
     clearTimeout(stallTimer); stallTimer=null;
     els.audio.preload='auto'; els.audio.src=current.streamUrl;els.audio.load();els.audio.play().catch(scheduleReconnect);
   },delay);
