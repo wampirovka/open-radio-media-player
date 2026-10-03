@@ -5,7 +5,7 @@ const STREAM_OVERRIDES=new Map([
   ['https://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM]
 ]);
 const DEFAULT_STATION={id:'rockova-zabava-secure',name:'Rocková zábava',streamUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:null,logoUrl:null,votes:999999,listeners:0,custom:true};
-const MAX_RECONNECT_ATTEMPTS=4;
+const MAX_RECONNECT_ATTEMPTS=12;
 
 const els={
   audio:document.querySelector('#audio'), list:document.querySelector('#stationList'), status:document.querySelector('#status'),
@@ -24,10 +24,11 @@ const els={
 let stations=[];
 let current=null;
 let reconnectAttempt=0;
+let reconnecting=false;
 let reconnectTimer=null;
-let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null,bufferTimer=null,bufferRecoveryTimer=null;
+let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null,bufferTimer=null,bufferRecoveryTimer=null,stallTimer=null;
 let currentTrack={title:'',artist:''};
-const BUFFER_PRESETS={low:5,normal:12,stable:25,max:45};
+const BUFFER_PRESETS={low:2,normal:4,stable:7,max:10};
 let adaptiveBuffer=12;
 let recoveringBuffer=false;
 let reconnectEligible=false;
@@ -67,9 +68,6 @@ function startBufferMonitor(){
   clearInterval(bufferTimer);
   bufferTimer=setInterval(()=>{
     if(!current||els.audio.paused||recoveringBuffer)return;
-    const seconds=getBufferedSeconds(),target=getBufferTarget(),low=Math.max(1.5,Math.min(6,target*.3));
-    if(els.bufferMode?.value==='auto' && seconds>target+8)adaptiveBuffer=Math.max(8,adaptiveBuffer-1);
-    if(seconds>0 && seconds<low)recoverFromLowBuffer();
     updateBufferUI();
   },1000);
 }
@@ -78,22 +76,12 @@ function stopBufferMonitor(){
   bufferTimer=null;
 }
 function recoverFromLowBuffer(){
-  if(recoveringBuffer||!current)return;
-  recoveringBuffer=true;
-  const target=Math.min(getBufferTarget(),30);
-  if(els.bufferMode?.value==='auto')adaptiveBuffer=Math.min(30,adaptiveBuffer+4);
-  updatePlayer(`Slabé připojení • doplňuji buffer…`);
-  els.audio.pause();
-  const started=Date.now();
-  clearInterval(bufferRecoveryTimer);
-  bufferRecoveryTimer=setInterval(()=>{
-    if(!current){clearInterval(bufferRecoveryTimer);recoveringBuffer=false;return;}
-    const seconds=getBufferedSeconds();
-    if(seconds>=Math.min(target,8) || Date.now()-started>7000){
-      clearInterval(bufferRecoveryTimer);recoveringBuffer=false;
-      els.audio.play().catch(()=>scheduleReconnect());
-    }
-  },250);
+  if(!current||userPaused)return;
+  clearTimeout(stallTimer);
+  stallTimer=setTimeout(()=>{
+    if(!current||userPaused||!els.audio.paused)return;
+    scheduleReconnect();
+  },Math.round(getBufferTarget()*1000));
 }
 function configureBufferUI(){
   if(!els.bufferMode)return;
@@ -214,7 +202,7 @@ function toggleFavorite(station){
   saveJson('openradio.favorites',[...favoriteIds]); render();
 }
 async function playStation(station){
-  clearTimeout(reconnectTimer); reconnectTimer=null; stopMetadataPolling(); stopBufferMonitor(); clearInterval(bufferRecoveryTimer); recoveringBuffer=false;
+  clearTimeout(reconnectTimer); reconnectTimer=null; clearTimeout(stallTimer); stallTimer=null; stopMetadataPolling(); stopBufferMonitor(); clearInterval(bufferRecoveryTimer); recoveringBuffer=false;
   reconnectAttempt=0; reconnectEligible=false; userPaused=false; current={...station,streamUrl:resolveStreamUrl(station.streamUrl)}; currentTrack={title:'',artist:''}; updateTrack('','');
   if(isBlockedMixedContent(current.streamUrl)){
     els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load();
@@ -222,8 +210,9 @@ async function playStation(station){
     return;
   }
   initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
-  els.audio.src=current.streamUrl; els.audio.load(); updatePlayer('Připojování…');
-  try{await els.audio.play()}catch{updatePlayer('Stream se nepodařilo spustit')}
+  els.audio.preload='auto';
+  els.audio.src=current.streamUrl; els.audio.load(); reconnectEligible=true; updatePlayer('Připojování…');
+  try{await els.audio.play()}catch{updatePlayer('Stream se nepodařilo spustit');scheduleReconnect()}
   render();
   if('mediaSession'in navigator){
     navigator.mediaSession.metadata=new MediaMetadata({title:station.name,artist:'Internet Radio',artwork:station.logoUrl?[{src:station.logoUrl}]:[]});
@@ -247,23 +236,25 @@ async function togglePlay(){
   if(els.audio.paused){userPaused=false;try{await els.audio.play()}catch{}}
   else {userPaused=true;els.audio.pause();}
 }
-function stop(){clearTimeout(reconnectTimer);reconnectTimer=null;stopMetadataPolling();stopBufferMonitor();clearInterval(bufferRecoveryTimer);recoveringBuffer=false;reconnectEligible=false;userPaused=true;els.audio.pause();els.audio.removeAttribute('src');els.audio.load();updatePlayer('Zastaveno');render()}
+function stop(){clearTimeout(reconnectTimer);reconnectTimer=null;clearTimeout(stallTimer);stallTimer=null;stopMetadataPolling();stopBufferMonitor();clearInterval(bufferRecoveryTimer);recoveringBuffer=false;reconnectEligible=false;userPaused=true;els.audio.pause();els.audio.removeAttribute('src');els.audio.load();updatePlayer('Zastaveno');render()}
 function scheduleReconnect(){
   if(!current||!els.reconnect.checked||!reconnectEligible||userPaused||isBlockedMixedContent(current.streamUrl))return;
   if(reconnectTimer)return;
-  if(reconnectAttempt>=MAX_RECONNECT_ATTEMPTS){updatePlayer('Stream není dostupný');return}
+  if(reconnectAttempt>=MAX_RECONNECT_ATTEMPTS){reconnectAttempt=0;}
   clearTimeout(reconnectTimer);
-  const delays=[10000,20000,30000,60000],delay=delays[Math.min(reconnectAttempt,3)]; reconnectAttempt++;
-  updatePlayer('Výpadek, nový pokus…');
+  const delays=[3000,5000,8000,12000,20000,30000,45000,60000],delay=delays[Math.min(reconnectAttempt,delays.length-1)]; reconnectAttempt++;
+  reconnecting=true; updatePlayer('Výpadek, znovu připojuji…');
   reconnectTimer=setTimeout(()=>{
     reconnectTimer=null;
     if(!current||userPaused||isBlockedMixedContent(current.streamUrl))return;
-    els.audio.src=current.streamUrl;els.audio.load();els.audio.play().catch(scheduleReconnect);
+    clearTimeout(stallTimer); stallTimer=null;
+    els.audio.preload='auto'; els.audio.src=current.streamUrl;els.audio.load();els.audio.play().catch(scheduleReconnect);
   },delay);
 }
-els.audio.addEventListener('playing',()=>{reconnectEligible=true;reconnectAttempt=0;updatePlayer('Hraje');render();updateBufferUI();pollStreamMetadata();startBufferMonitor()});
-els.audio.addEventListener('pause',()=>{if(!recoveringBuffer)stopBufferMonitor();if(current&&els.audio.src)updatePlayer('Pozastaveno');render()});
-els.audio.addEventListener('waiting',()=>updatePlayer('Připojování…'));
+els.audio.addEventListener('playing',()=>{clearTimeout(stallTimer);stallTimer=null;reconnecting=false;reconnectAttempt=0;reconnectEligible=true;updatePlayer('Hraje');render();updateBufferUI();pollStreamMetadata();startBufferMonitor()});
+els.audio.addEventListener('pause',()=>{if(!recoveringBuffer)stopBufferMonitor();if(current&&els.audio.src&&!reconnecting&&!userPaused)recoverFromLowBuffer();if(current&&els.audio.src&&userPaused)updatePlayer('Pozastaveno');render()});
+els.audio.addEventListener('waiting',()=>{if(!current||userPaused)return; updatePlayer('Připojování…'); recoverFromLowBuffer()});
+els.audio.addEventListener('stalled',()=>{if(!current||userPaused)return; recoverFromLowBuffer()});
 els.audio.addEventListener('error',scheduleReconnect);
 els.miniPlay.addEventListener('click',togglePlay);els.fullPlay.addEventListener('click',togglePlay);
 els.miniStop.addEventListener('click',stop);document.querySelector('#fullStop').addEventListener('click',stop);
