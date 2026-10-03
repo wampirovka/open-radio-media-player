@@ -1,6 +1,8 @@
 const API='https://de1.api.radio-browser.info/json/stations/search';
 const ROCKOVA_ZABAVA_STREAM='https://ice2.radia.cz/rockzabava128.aac';
 const STREAM_OVERRIDES=new Map([
+  ['http://ice.abradio.cz/hit80128.mp3','https://27753.live.streamtheworld.com/HITRADIO_OSMDESATKA.aac'],
+  ['https://ice.abradio.cz/hit80128.mp3','https://27753.live.streamtheworld.com/HITRADIO_OSMDESATKA.aac'],
   ['http://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM],
   ['https://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM]
 ]);
