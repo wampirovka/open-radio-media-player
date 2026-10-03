@@ -20,6 +20,13 @@ if ($host === '' || in_array($host, ['localhost', '127.0.0.1', '::1'], true) ||
     exit;
 }
 
+// Metadata jsou doplněk přehrávání. Pokud hostitel nemá cURL, nesmí to rozbít
+// přehrávač ani vracet opakovanou chybu 500 do konzole.
+if (!function_exists('curl_init')) {
+    http_response_code(204);
+    exit;
+}
+
 $metaInt = null;
 $body = '';
 $result = null;
@@ -78,5 +85,6 @@ if ($result) {
     exit;
 }
 
-http_response_code(404);
-echo json_encode(['error' => 'No StreamTitle metadata found']);
+// Stream bez ICY metadat nebo nedostupný stream není chyba přehrávače.
+// 204 umožní klientovi tento zdroj potichu vypnout pro zbytek relace.
+http_response_code(204);
