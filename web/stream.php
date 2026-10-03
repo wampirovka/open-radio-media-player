@@ -29,20 +29,7 @@ if (!function_exists('curl_init')) {
 set_time_limit(0);
 ignore_user_abort(false);
 
-header('Content-Type: audio/mpeg');
-header('Cache-Control: no-cache, no-store, must-revalidate');
-header('Pragma: no-cache');
-header('Expires: 0');
-header('X-Accel-Buffering: no');
-header('Access-Control-Allow-Origin: *');
-
-$forwardHeaders = [
-    'icy-br',
-    'icy-genre',
-    'icy-name',
-    'icy-metaint',
-    'icy-description',
-];
+$sentHeaders = false;
 
 $ch = curl_init($url);
 curl_setopt_array($ch, [
@@ -50,22 +37,40 @@ curl_setopt_array($ch, [
     CURLOPT_MAXREDIRS => 5,
     CURLOPT_CONNECTTIMEOUT => 8,
     CURLOPT_TIMEOUT => 0,
+    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
     CURLOPT_HTTPHEADER => [
         'Icy-MetaData: 1',
         'User-Agent: Sukadio/1.0',
-        'Accept: */*',
+        'Accept: audio/aac,audio/mpeg,audio/*;q=0.9,*/*;q=0.1',
+        'Connection: keep-alive',
     ],
-    CURLOPT_HEADERFUNCTION => function($ch, $header) use ($forwardHeaders) {
+    CURLOPT_HEADERFUNCTION => function($ch, $header) use (&$sentHeaders) {
         $line = trim($header);
-        if ($line === '' || stripos($line, 'HTTP/') === 0) return strlen($header);
+        if ($line === '') return strlen($header);
+
+        if (stripos($line, 'HTTP/') === 0) {
+            return strlen($header);
+        }
+
         [$name, $value] = array_pad(explode(':', $line, 2), 2, '');
         $name = strtolower(trim($name));
-        if (in_array($name, $forwardHeaders, true)) {
-            header($name . ': ' . trim($value));
+        $value = trim($value);
+
+        if ($name === 'content-type' && $value !== '') {
+            header('Content-Type: ' . $value);
+            $sentHeaders = true;
+        } elseif ($name === 'icy-br' && $value !== '') {
+            header('icy-br: ' . $value);
+        } elseif ($name === 'icy-genre' && $value !== '') {
+            header('icy-genre: ' . $value);
+        } elseif ($name === 'icy-name' && $value !== '') {
+            header('icy-name: ' . $value);
+        } elseif ($name === 'icy-metaint' && $value !== '') {
+            header('icy-metaint: ' . $value);
+        } elseif ($name === 'icy-description' && $value !== '') {
+            header('icy-description: ' . $value);
         }
-        if ($name === 'content-type' && trim($value) !== '') {
-            header('Content-Type: ' . trim($value));
-        }
+
         return strlen($header);
     },
     CURLOPT_WRITEFUNCTION => function($ch, $chunk) {
@@ -76,16 +81,31 @@ curl_setopt_array($ch, [
     },
 ]);
 
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+header('X-Accel-Buffering: no');
+header('Access-Control-Allow-Origin: *');
+
 $result = curl_exec($ch);
 $error = curl_error($ch);
 $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$contentType = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
 curl_close($ch);
 
-if ($result === false && connection_status() !== CONNECTION_NORMAL) exit;
-if ($httpCode >= 400 || $error !== '') {
+if ($result === false && connection_status() !== CONNECTION_NORMAL) {
+    exit;
+}
+
+if ($error !== '' || $httpCode >= 400 || $httpCode === 0) {
     if (!headers_sent()) {
         http_response_code($httpCode >= 400 ? $httpCode : 502);
         header('Content-Type: text/plain; charset=utf-8');
         echo 'Stream proxy error';
     }
+    exit;
+}
+
+if (!$sentHeaders && $contentType !== '') {
+    header('Content-Type: ' . $contentType);
 }
