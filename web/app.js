@@ -1,4 +1,5 @@
 const API='https://de1.api.radio-browser.info/json/stations/search';
+const FAJN_ROCK_STREAM='http://icecast1.play.cz/fajnrock128.mp3';
 const ROCKOVA_ZABAVA_STREAM='https://ice2.radia.cz/rockzabava128.aac';
 const STREAM_OVERRIDES=new Map([
   ['http://ice.abradio.cz/hit80128.mp3','https://27753.live.streamtheworld.com/HITRADIO_OSMDESATKA.aac'],
@@ -6,7 +7,10 @@ const STREAM_OVERRIDES=new Map([
   ['http://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM],
   ['https://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM]
 ]);
-const DEFAULT_STATION={id:'rockova-zabava-secure',name:'Rocková zábava',streamUrl:ROCKOVA_ZABAVA_STREAM,metadataUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:null,logoUrl:null,votes:999999,listeners:0,custom:true};
+const BUILT_IN_STATIONS=[
+  {id:'fajn-rock-music',name:'Fajn Rock Music',streamUrl:FAJN_ROCK_STREAM,metadataUrl:FAJN_ROCK_STREAM,homepageUrl:'https://www.fajnrockmusic.cz/radio/',logoUrl:'https://www.fajnrockmusic.cz/favicon.ico',votes:999999,listeners:0,custom:true},
+  {id:'rockova-zabava-secure',name:'Rocková zábava',streamUrl:ROCKOVA_ZABAVA_STREAM,metadataUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:'https://radia.cz/',logoUrl:null,votes:999998,listeners:0,custom:true}
+];
 const MAX_RECONNECT_ATTEMPTS=12;
 
 const els={
@@ -153,7 +157,7 @@ function isBlockedMixedContent(url){
 }
 function merged(apiStations){
   const map=new Map();
-  [DEFAULT_STATION,...customStations,...apiStations].forEach(s=>map.set(s.id,s));
+  [...BUILT_IN_STATIONS,...customStations,...apiStations].forEach(s=>map.set(s.id,s));
   return [...map.values()];
 }
 async function loadStations(query=''){
