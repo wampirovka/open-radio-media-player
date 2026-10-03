@@ -79,7 +79,7 @@ function recoverFromLowBuffer(){
   if(!current||userPaused)return;
   clearTimeout(stallTimer);
   stallTimer=setTimeout(()=>{
-    if(!current||userPaused||!els.audio.paused)return;
+    if(!current||userPaused)return;
     scheduleReconnect();
   },Math.round(getBufferTarget()*1000));
 }
