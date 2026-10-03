@@ -6,7 +6,7 @@ const STREAM_OVERRIDES=new Map([
   ['http://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM],
   ['https://ice.abradio.cz/rockzabava128.mp3',ROCKOVA_ZABAVA_STREAM]
 ]);
-const DEFAULT_STATION={id:'rockova-zabava-secure',name:'Rocková zábava',streamUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:null,logoUrl:null,votes:999999,listeners:0,custom:true};
+const DEFAULT_STATION={id:'rockova-zabava-secure',name:'Rocková zábava',streamUrl:ROCKOVA_ZABAVA_STREAM,metadataUrl:ROCKOVA_ZABAVA_STREAM,homepageUrl:null,logoUrl:null,votes:999999,listeners:0,custom:true};
 const MAX_RECONNECT_ATTEMPTS=12;
 
 const els={
@@ -108,7 +108,7 @@ async function readMetadata(url){
 function stopMetadataPolling(){clearInterval(metadataTimer);metadataTimer=null}
 function pollStreamMetadata(){
   stopMetadataPolling();
-  const url=current?.streamUrl;
+  const url=current?.metadataUrl||current?.streamUrl;
   if(!url||metadataUnavailable.has(url))return;
   const read=async()=>{
     try{
@@ -135,11 +135,19 @@ function stationLogo(station,cls='logo'){
   return div;
 }
 function normalize(item){
-  const url=resolveStreamUrl(item.url_resolved||item.url);
-  if(!item.stationuuid||!item.name||!/^https?:\/\//.test(url||''))return null;
-  return {id:item.stationuuid,name:item.name.trim(),streamUrl:url,homepageUrl:item.homepage||null,logoUrl:item.favicon||null,votes:item.votes||0,listeners:item.clickcount||0};
+  const sourceUrl=item.url_resolved||item.url;
+  const url=resolveStreamUrl(sourceUrl);
+  if(!item.stationuuid||!item.name||!/^https?:\/\//.test(sourceUrl||''))return null;
+  return {id:item.stationuuid,name:item.name.trim(),streamUrl:url,metadataUrl:sourceUrl,homepageUrl:item.homepage||null,logoUrl:item.favicon||null,votes:item.votes||0,listeners:item.clickcount||0};
 }
-function resolveStreamUrl(url){return STREAM_OVERRIDES.get(url)||url}
+function resolveStreamUrl(url){
+  const resolved=STREAM_OVERRIDES.get(url)||url;
+  try{
+    if(location.protocol==='https:'&&new URL(resolved,location.href).protocol==='http:')
+      return 'stream.php?url='+encodeURIComponent(resolved);
+  }catch{}
+  return resolved;
+}
 function isBlockedMixedContent(url){
   try{return location.protocol==='https:'&&new URL(url,location.href).protocol==='http:'}catch{return true}
 }
@@ -205,7 +213,7 @@ function toggleFavorite(station){
 }
 async function playStation(station){
   clearTimeout(reconnectTimer); reconnectTimer=null; clearTimeout(stallTimer); stallTimer=null; stopMetadataPolling(); stopBufferMonitor(); clearInterval(bufferRecoveryTimer); recoveringBuffer=false;
-  reconnectAttempt=0; reconnectEligible=false; userPaused=false; current={...station,streamUrl:resolveStreamUrl(station.streamUrl)}; currentTrack={title:'',artist:''}; updateTrack('','');
+  reconnectAttempt=0; reconnectEligible=false; userPaused=false; current={...station,metadataUrl:station.metadataUrl||station.streamUrl,streamUrl:resolveStreamUrl(station.streamUrl)}; currentTrack={title:'',artist:''}; updateTrack('','');
   if(isBlockedMixedContent(current.streamUrl)){
     els.audio.pause(); els.audio.removeAttribute('src'); els.audio.load();
     updatePlayer('Tento stream není přes HTTPS dostupný'); render();
@@ -275,7 +283,7 @@ document.querySelector('#addForm').addEventListener('submit',e=>{
   const logoUrl=document.querySelector('#customLogo').value.trim()||null;
   if(!name||!/^https?:\/\//.test(streamUrl))return;
   const id='custom:'+btoa(unescape(encodeURIComponent(streamUrl))).replace(/=+$/,'').slice(-32);
-  const station={id,name,streamUrl,logoUrl,homepageUrl:null,votes:0,listeners:0,custom:true};
+  const station={id,name,streamUrl,metadataUrl:streamUrl,logoUrl,homepageUrl:null,votes:0,listeners:0,custom:true};
   const idx=customStations.findIndex(s=>s.id===id);if(idx>=0)customStations[idx]=station;else customStations.unshift(station);
   saveJson('openradio.custom',customStations);els.addDialog.close();e.target.reset();stations=merged(stations);render();
 });
