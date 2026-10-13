@@ -32,6 +32,9 @@ let current=null;
 let reconnectAttempt=0;
 let reconnecting=false;
 let reconnectTimer=null;
+let interruptionTimer=null;
+let playbackIntended=false;
+let lastPauseWasUser=false;
 let audioContext=null,analyser=null,sourceNode=null,visualizerFrame=null,metadataTimer=null,bufferTimer=null,bufferRecoveryTimer=null,stallTimer=null;
 let currentTrack={title:'',artist:''};
 const BUFFER_PRESETS={low:2,normal:4,stable:7,max:10};
@@ -216,6 +219,7 @@ function toggleFavorite(station){
   saveJson('openradio.favorites',[...favoriteIds]); render();
 }
 async function playStation(station){
+  playbackIntended=true;lastPauseWasUser=false;clearTimeout(interruptionTimer);interruptionTimer=null;
   clearTimeout(reconnectTimer); reconnectTimer=null; clearTimeout(stallTimer); stallTimer=null; stopMetadataPolling(); stopBufferMonitor(); clearInterval(bufferRecoveryTimer); recoveringBuffer=false;
   reconnectAttempt=0; reconnectEligible=false; userPaused=false; current={...station,metadataUrl:station.metadataUrl||station.streamUrl,streamUrl:resolveStreamUrl(station.streamUrl)}; currentTrack={title:'',artist:''}; updateTrack('','');
   initVisualizer(); if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
@@ -242,10 +246,10 @@ function setArtwork(el,station,cls){
 }
 async function togglePlay(){
   if(!current)return;
-  if(els.audio.paused){userPaused=false;try{await els.audio.play()}catch{}}
-  else {userPaused=true;els.audio.pause();}
+  if(els.audio.paused){userPaused=false;playbackIntended=true;lastPauseWasUser=false;try{await els.audio.play()}catch(e){scheduleReconnect()}}
+  else {userPaused=true;playbackIntended=false;lastPauseWasUser=true;clearTimeout(interruptionTimer);els.audio.pause();}
 }
-function stop(){clearTimeout(reconnectTimer);reconnectTimer=null;clearTimeout(stallTimer);stallTimer=null;stopMetadataPolling();stopBufferMonitor();clearInterval(bufferRecoveryTimer);recoveringBuffer=false;reconnectEligible=false;userPaused=true;els.audio.pause();els.audio.removeAttribute('src');els.audio.load();updatePlayer('Zastaveno');render()}
+function stop(){playbackIntended=false;lastPauseWasUser=true;clearTimeout(interruptionTimer);interruptionTimer=null;clearTimeout(reconnectTimer);reconnectTimer=null;clearTimeout(stallTimer);stallTimer=null;stopMetadataPolling();stopBufferMonitor();clearInterval(bufferRecoveryTimer);recoveringBuffer=false;reconnectEligible=false;userPaused=true;els.audio.pause();els.audio.removeAttribute('src');els.audio.load();updatePlayer('Zastaveno');render()}
 function scheduleReconnect(){
   if(!current||!els.reconnect.checked||!reconnectEligible||userPaused)return;
   if(reconnectTimer)return;
@@ -260,8 +264,28 @@ function scheduleReconnect(){
     els.audio.preload='auto'; els.audio.src=current.streamUrl;els.audio.load();els.audio.play().catch(scheduleReconnect);
   },delay);
 }
-els.audio.addEventListener('playing',()=>{clearTimeout(stallTimer);stallTimer=null;reconnecting=false;reconnectAttempt=0;reconnectEligible=true;updatePlayer('Hraje');render();updateBufferUI();pollStreamMetadata();startBufferMonitor()});
-els.audio.addEventListener('pause',()=>{if(!recoveringBuffer)stopBufferMonitor();if(current&&els.audio.src&&!reconnecting&&!userPaused)recoverFromLowBuffer();if(current&&els.audio.src&&userPaused)updatePlayer('Pozastaveno');render()});
+function setMediaPlaybackState(state){
+  if(!('mediaSession' in navigator))return;
+  try{navigator.mediaSession.playbackState=state}catch(e){}
+}
+async function resumeAfterInterruption(){
+  if(!current||!playbackIntended||userPaused||lastPauseWasUser||!els.audio.paused)return;
+  try{await els.audio.play();setMediaPlaybackState('playing')}catch(e){scheduleReconnect()}
+}
+els.audio.addEventListener('playing',()=>{
+  clearTimeout(interruptionTimer);interruptionTimer=null;clearTimeout(stallTimer);stallTimer=null;
+  reconnecting=false;reconnectAttempt=0;reconnectEligible=true;playbackIntended=true;
+  setMediaPlaybackState('playing');updatePlayer('Hraje');render();updateBufferUI();pollStreamMetadata();startBufferMonitor();
+});
+els.audio.addEventListener('pause',()=>{
+  if(!recoveringBuffer)stopBufferMonitor();
+  if(current&&els.audio.src&&userPaused){setMediaPlaybackState('paused');updatePlayer('Pozastaveno')}
+  else if(current&&els.audio.src&&playbackIntended&&!lastPauseWasUser){
+    clearTimeout(interruptionTimer);
+    interruptionTimer=setTimeout(resumeAfterInterruption,1200);
+  }
+  render();
+});
 els.audio.addEventListener('waiting',()=>{if(!current||userPaused)return; updatePlayer('Připojování…'); recoverFromLowBuffer()});
 els.audio.addEventListener('stalled',()=>{if(!current||userPaused)return; recoverFromLowBuffer()});
 els.audio.addEventListener('error',scheduleReconnect);
@@ -298,8 +322,12 @@ document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click'
   else document.querySelector('.settings').scrollIntoView({behavior:'smooth'});
 }));
 if('mediaSession'in navigator){
-  navigator.mediaSession.setActionHandler('play',()=>els.audio.play().catch(()=>{}));
-  navigator.mediaSession.setActionHandler('pause',()=>els.audio.pause());
-  navigator.mediaSession.setActionHandler('stop',stop);
+  try{navigator.mediaSession.setActionHandler('play',()=>{userPaused=false;playbackIntended=true;lastPauseWasUser=false;els.audio.play().then(()=>setMediaPlaybackState('playing')).catch(scheduleReconnect)})}catch(e){}
+  try{navigator.mediaSession.setActionHandler('pause',()=>{userPaused=true;playbackIntended=false;lastPauseWasUser=true;clearTimeout(interruptionTimer);els.audio.pause();setMediaPlaybackState('paused')})}catch(e){}
+  try{navigator.mediaSession.setActionHandler('stop',stop)}catch(e){}
+  setMediaPlaybackState('none');
 }
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resumeAfterInterruption()});
+window.addEventListener('pageshow',()=>resumeAfterInterruption());
+window.addEventListener('focus',()=>resumeAfterInterruption());
 loadStations();
