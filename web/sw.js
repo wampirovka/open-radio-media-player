@@ -1,4 +1,4 @@
-const CACHE_NAME='open-radio-v6';
+const CACHE_NAME='open-radio-v8';
 const APP_SHELL=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icons/sukadio-logo.svg'];
 
 self.addEventListener('install',event=>{
@@ -13,17 +13,17 @@ self.addEventListener('activate',event=>{
 
 self.addEventListener('fetch',event=>{
   const url=new URL(event.request.url);
-  if(url.origin!==self.location.origin)return;
-  event.respondWith(
-    caches.match(event.request).then(cached=>{
-      if(cached)return cached;
-      return fetch(event.request).then(response=>{
-        if(event.request.method==='GET' && response.ok){
-          const copy=response.clone();
-          caches.open(CACHE_NAME).then(cache=>cache.put(event.request,copy));
-        }
-        return response;
-      });
-    })
-  );
+  if(url.origin!==self.location.origin || event.request.method!=='GET')return;
+  const isShellRequest=event.request.mode==='navigate'||['script','style','image','manifest'].includes(event.request.destination);
+  if(!isShellRequest)return;
+  const fetchAndCache=()=>fetch(event.request).then(response=>{
+    if(response.ok){
+      const copy=response.clone();
+      event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.put(event.request,copy)));
+    }
+    return response;
+  });
+  // Aplikace jde vždy nejdřív na síť; cache je výhradně offline záloha.
+  // API a metadata se nikdy neukládají, aby nemohla vzniknout falešně aktuální data.
+  event.respondWith(fetchAndCache().catch(()=>caches.match(event.request)));
 });

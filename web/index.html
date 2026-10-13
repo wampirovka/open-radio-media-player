@@ -29,7 +29,7 @@
   <div class="section-head"><div><h2>Nastavení</h2><p>Přehrávání a připojení</p></div></div>
   <label class="setting-row"><span><strong>Automaticky obnovit rádio</strong><small>Při výpadku se přehrávač zkusí znovu připojit.</small></span><input id="reconnectToggle" type="checkbox"></label>
   <div class="buffer-setting">
-    <div class="buffer-head"><span><strong>Buffer streamu</strong><small>Rezerva dat proti krátkému zpomalení internetu.</small></span><output id="bufferValue">Auto</output></div>
+    <div class="buffer-head"><span><strong>Stabilita připojení</strong><small>Určuje, jak dlouho prohlížeč čeká při doplnění dat, než zkusí bezpečný reconnect. Buffer samotný řídí prohlížeč.</small></span><output id="bufferValue">Auto</output></div>
     <select id="bufferMode" class="buffer-select" aria-label="Režim bufferu">
       <option value="auto">Automaticky • přizpůsobuje se</option>
       <option value="low">Nízký • 5 s</option>
@@ -53,6 +53,6 @@
 </div>
 <dialog id="addDialog"><form id="addForm" method="dialog" class="dialog-card"><div class="dialog-head"><button class="icon-btn secondary" value="cancel" formnovalidate aria-label="Zavřít">×</button><h3>Přidat rádio</h3><span></span></div><label>Název rádia<input id="customName" required placeholder="Moje rádio"></label><label>URL streamu<input id="customUrl" required type="url" placeholder="https://..."></label><label>URL loga <small>(volitelné)</small><input id="customLogo" type="url" placeholder="https://..."></label><div class="dialog-actions"><button class="outline-btn" value="cancel" formnovalidate>Zrušit</button><button id="saveStationBtn" class="primary-btn" value="default">Uložit</button></div></form></dialog>
 <dialog id="playerDialog" class="player-dialog"><div class="full-player"><div class="dialog-head"><button id="closePlayer" class="icon-btn secondary" type="button" aria-label="Zavřít">×</button><h3>Právě hraje</h3><span class="spacer-btn"></span></div><div class="visualizer-wrap"><canvas id="visualizer" class="visualizer" aria-label="Audio vizualizér"></canvas><div id="fullArtwork" class="full-artwork"><img src="icons/sukadio-logo.svg" alt=""></div></div><h2 id="fullTitle">Sukadio → RockPower</h2><p id="fullSubtitle">Internet Radio</p><p id="trackInfo" class="track-info">Skladba a interpret nejsou ze streamu dostupné</p><p id="fullState" class="full-state">Připraveno</p><div class="full-controls"><button id="fullStop" class="player-btn large" type="button">■</button><button id="fullPlayPause" class="big-play" type="button">▶</button><span class="spacer-btn"></span></div></div></dialog>
-<audio id="audio" preload="none" crossorigin="anonymous"></audio>
+<audio id="audio" preload="none"></audio>
 <script src="app.js"></script><script>if("serviceWorker"in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}</script>
 </body></html>
