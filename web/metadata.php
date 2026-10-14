@@ -31,6 +31,7 @@ $metaInt = null;
 $body = '';
 $result = null;
 $aborted = false;
+$metadataBlocks = 0;
 
 $ch = curl_init($url);
 curl_setopt_array($ch, [
@@ -38,7 +39,7 @@ curl_setopt_array($ch, [
     CURLOPT_FOLLOWLOCATION => true,
     CURLOPT_MAXREDIRS => 3,
     CURLOPT_CONNECTTIMEOUT => 5,
-    CURLOPT_TIMEOUT => 12,
+    CURLOPT_TIMEOUT => 18,
     CURLOPT_HTTPHEADER => ['Icy-MetaData: 1', 'User-Agent: OpenRadio/1.0'],
     CURLOPT_HEADERFUNCTION => function($ch, $header) use (&$metaInt) {
         if (stripos($header, 'icy-metaint:') === 0) {
@@ -55,12 +56,15 @@ curl_setopt_array($ch, [
         $body .= $chunk;
         if (strlen($body) < $metaInt + 1) return strlen($chunk);
 
-        $len = ord($body[$metaInt]) * 16;
-        if (strlen($body) < $metaInt + 1 + $len) return strlen($chunk);
+        // ICY metadata can arrive split across several cURL chunks. Keep the
+        // bytes until one complete metadata block is available.
+        while (strlen($body) >= $metaInt + 1) {
+            $len = ord($body[$metaInt]) * 16;
+            if (strlen($body) < $metaInt + 1 + $len) return strlen($chunk);
 
-        $meta = substr($body, $metaInt + 1, $len);
-        if (preg_match("/StreamTitle='(.*?)';/s", $meta, $m)) {
-            $raw = trim(preg_replace('/\\s+/', ' ', $m[1]));
+            $meta = substr($body, $metaInt + 1, $len);
+            if (preg_match('/StreamTitle\\s*=\\s*[\'"]([^\'"]*)[\'"]\\s*;/i', $meta, $m)) {
+                $raw = trim(preg_replace('/\\s+/', ' ', $m[1]));
             $parts = explode(' - ', $raw);
             if (count($parts) > 1) {
                 $artist = trim(array_shift($parts));
@@ -69,11 +73,18 @@ curl_setopt_array($ch, [
                 $artist = '';
                 $title = $raw;
             }
-            $result = ['title' => $title, 'artist' => $artist, 'raw' => $raw];
+                if ($raw !== '') {
+                    $result = ['title' => $title, 'artist' => $artist, 'raw' => $raw];
+                }
+            }
+            $metadataBlocks++;
+            $body = substr($body, $metaInt + 1 + $len);
+            if ($result || $metadataBlocks >= 8) {
+                $aborted = true;
+                return 0;
+            }
         }
-
-        $aborted = true;
-        return 0;
+        return strlen($chunk);
     }
 ]);
 

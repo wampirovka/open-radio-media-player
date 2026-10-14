@@ -22,7 +22,8 @@ const els = {
 
 const playback = {
   session: 0, current: null, reconnectAttempt: 0, reconnectTimer: null, stallTimer: null, bufferTimer: null,
-  metadataTimer: null, metadataRequest: null, metadataLoading: false, userPaused: false, waiting: false, adaptiveGrace: 12
+  metadataTimer: null, metadataRequest: null, metadataLoading: false, interruptionTimer: null,
+  userPaused: false, intendedPlaying: false, waiting: false, adaptiveGrace: 12
 };
 
 let stations = [];
@@ -376,9 +377,25 @@ async function loadStations(query = '') {
 
 function clearPlaybackTimers() {
   clearTimer('reconnectTimer');
+  clearTimer('interruptionTimer');
   clearStallWatch();
   stopBufferMonitor();
   stopMetadataPolling();
+}
+
+function setMediaPlaybackState(state) {
+  if (!('mediaSession' in navigator)) return;
+  try { navigator.mediaSession.playbackState = state; } catch {}
+}
+
+async function resumeAfterInterruption() {
+  if (!playback.current || !playback.intendedPlaying || playback.userPaused || !els.audio.paused) return;
+  try {
+    await els.audio.play();
+    setMediaPlaybackState('playing');
+  } catch {
+    scheduleReconnect('Přehrávání se po přerušení neobnovilo');
+  }
 }
 
 function canReconnect() {
@@ -432,6 +449,7 @@ function playStation(station) {
   playback.current = station;
   playback.reconnectAttempt = 0;
   playback.userPaused = false;
+  playback.intendedPlaying = true;
   playback.adaptiveGrace = 12;
   currentTrack = { title: '', artist: '' };
   updateTrack('', '');
@@ -450,6 +468,8 @@ async function togglePlay() {
   if (!playback.current) return;
   if (els.audio.paused) {
     playback.userPaused = false;
+    playback.intendedPlaying = true;
+    clearTimer('interruptionTimer');
     updatePlayer('Připojuji…');
     try { await els.audio.play(); } catch (error) {
       if (error?.name === 'NotAllowedError') updatePlayer('Klikni na ▶ pro spuštění');
@@ -457,6 +477,7 @@ async function togglePlay() {
     }
   } else {
     playback.userPaused = true;
+    playback.intendedPlaying = false;
     clearPlaybackTimers();
     els.audio.pause();
   }
@@ -465,6 +486,7 @@ async function togglePlay() {
 function stop() {
   playback.session += 1;
   playback.userPaused = true;
+  playback.intendedPlaying = false;
   playback.reconnectAttempt = 0;
   clearPlaybackTimers();
   els.audio.pause();
@@ -477,10 +499,13 @@ function stop() {
 els.audio.addEventListener('playing', () => {
   if (!playback.current) return;
   clearTimer('reconnectTimer');
+  clearTimer('interruptionTimer');
   clearStallWatch();
   playback.reconnectAttempt = 0;
+  playback.intendedPlaying = true;
   playback.adaptiveGrace = Math.max(12, playback.adaptiveGrace - 1);
   updatePlayer('Hraje');
+  setMediaPlaybackState('playing');
   startBufferMonitor();
   startMetadataPolling();
   render();
@@ -489,8 +514,12 @@ els.audio.addEventListener('pause', () => {
   stopBufferMonitor();
   clearStallWatch();
   if (playback.current && els.audio.src && playback.userPaused) {
+    setMediaPlaybackState('paused');
     updatePlayer('Pozastaveno');
     render();
+  } else if (playback.current && els.audio.src && playback.intendedPlaying) {
+    clearTimer('interruptionTimer');
+    playback.interruptionTimer = setTimeout(resumeAfterInterruption, 1200);
   }
 });
 els.audio.addEventListener('waiting', () => {
@@ -577,9 +606,26 @@ document.querySelectorAll('.nav-item').forEach(button => button.addEventListener
 }));
 
 if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('play', () => { playback.userPaused = false; els.audio.play().catch(() => {}); });
-  navigator.mediaSession.setActionHandler('pause', () => { playback.userPaused = true; els.audio.pause(); });
+  navigator.mediaSession.setActionHandler('play', () => {
+    playback.userPaused = false;
+    playback.intendedPlaying = true;
+    els.audio.play().catch(() => scheduleReconnect('Přehrávání se nepodařilo obnovit'));
+  });
+  navigator.mediaSession.setActionHandler('pause', () => {
+    playback.userPaused = true;
+    playback.intendedPlaying = false;
+    clearTimer('interruptionTimer');
+    els.audio.pause();
+    setMediaPlaybackState('paused');
+  });
   navigator.mediaSession.setActionHandler('stop', stop);
+  setMediaPlaybackState('none');
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') resumeAfterInterruption();
+});
+window.addEventListener('pageshow', resumeAfterInterruption);
+window.addEventListener('focus', resumeAfterInterruption);
 
 loadStations();
