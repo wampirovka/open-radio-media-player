@@ -4,7 +4,7 @@ const RECONNECT_DELAYS = [3000, 7000, 15000, 30000];
 
 // Stations are data. There are no station-specific playback hacks or audio proxies.
 const BUILT_IN_STATIONS = [
-  { id: 'fajn-rock-music', name: 'Fajn Rock Music', streamUrl: 'https://icecast1.play.cz/fajnrock128.mp3?1397678024622.mp3&r=375', homepageUrl: 'https://www.fajnrockmusic.cz/', logoUrl: null, votes: 999999, listeners: 0, builtIn: true },
+  { id: 'fajn-rock-music', name: 'Fajn Rock Music', streamUrl: 'https://icecast1.play.cz/fajnrock128.mp3?1397678024622.mp3&r=375', metadataUrl: null, homepageUrl: 'https://www.fajnrockmusic.cz/', logoUrl: null, votes: 999999, listeners: 0, builtIn: true },
   { id: 'rockova-zabava', name: 'Rocková zábava', streamUrl: 'https://ice2.radia.cz/rockzabava128.aac', homepageUrl: null, logoUrl: null, votes: 999998, listeners: 0, builtIn: true }
 ];
 
@@ -60,7 +60,8 @@ function isPlayableStream(url) {
 function normalizeStation(item) {
   const streamUrl = item.url_resolved || item.url;
   if (!item.stationuuid || !item.name || !isPlayableStream(streamUrl)) return null;
-  return { id: item.stationuuid, name: item.name.trim(), streamUrl, homepageUrl: item.homepage || null, logoUrl: item.favicon || null, votes: item.votes || 0, listeners: item.clickcount || 0 };
+  const logoUrl = typeof item.favicon === 'string' && /^https?:\/\//i.test(item.favicon) ? item.favicon : null;
+  return { id: item.stationuuid, name: item.name.trim(), streamUrl, homepageUrl: item.homepage || null, logoUrl, votes: item.votes || 0, listeners: item.clickcount || 0 };
 }
 
 function availableStations(apiStations = []) {
@@ -160,18 +161,19 @@ async function requestMetadata(url) {
 function startMetadataPolling() {
   stopMetadataPolling();
   const station = playback.current;
-  if (!station || metadataUnavailable.has(station.streamUrl)) return;
+  const metadataUrl = station?.metadataUrl === undefined ? station?.streamUrl : station.metadataUrl;
+  if (!station || !metadataUrl || metadataUnavailable.has(metadataUrl)) return;
   const session = playback.session;
   const read = async () => {
     if (playback.metadataLoading || playback.session !== session || playback.current?.streamUrl !== station.streamUrl) return;
     playback.metadataLoading = true;
     try {
-      const metadata = await requestMetadata(station.streamUrl);
+      const metadata = await requestMetadata(metadataUrl);
       if (playback.session === session && (metadata?.title || metadata?.artist)) updateTrack(metadata.title, metadata.artist);
-      if (!metadata) metadataUnavailable.add(station.streamUrl);
+      if (!metadata) metadataUnavailable.add(metadataUrl);
     } catch {
       // Metadata are optional. A broken endpoint must never influence audio.
-      metadataUnavailable.add(station.streamUrl);
+      metadataUnavailable.add(metadataUrl);
     } finally {
       playback.metadataLoading = false;
       if (metadataUnavailable.has(station.streamUrl)) stopMetadataPolling();
@@ -183,19 +185,9 @@ function startMetadataPolling() {
 
 function initVisualizer() {
   if (analyser || visualizerFrame) return;
-  try {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioContext.createMediaElementSource(els.audio);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.82;
-    source.connect(analyser);
-    analyser.connect(audioContext.destination);
-  } catch {
-    // Some hosts prohibit analyser data. Audio remains playable and the
-    // visualizer below renders a neutral fallback.
-    analyser = null;
-  }
+  // Do not route third-party streams through Web Audio: without CORS headers
+  // browsers can silence the audio. The visualizer has its own neutral fallback.
+  analyser = null;
   drawVisualizer();
 }
 
