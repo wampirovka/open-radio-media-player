@@ -5,7 +5,8 @@ const RECONNECT_DELAYS = [3000, 7000, 15000, 30000];
 // Stations are data. There are no station-specific playback hacks or audio proxies.
 const BUILT_IN_STATIONS = [
   { id: 'fajn-rock-music', name: 'Fajn Rock Music', streamUrl: 'https://icecast1.play.cz/fajnrock128.mp3?1397678024622.mp3&r=375', metadataUrl: null, homepageUrl: 'https://www.fajnrockmusic.cz/', logoUrl: null, votes: 999999, listeners: 0, builtIn: true },
-  { id: 'rockova-zabava', name: 'Rocková zábava', streamUrl: 'https://ice2.radia.cz/rockzabava128.aac', homepageUrl: null, logoUrl: null, votes: 999998, listeners: 0, builtIn: true }
+  { id: 'rockova-zabava', name: 'Rocková zábava', streamUrl: 'https://ice2.radia.cz/rockzabava128.aac', homepageUrl: null, logoUrl: null, votes: 999998, listeners: 0, builtIn: true },
+  { id: 'rock-radio-stage', name: 'Rock Radio Stage', streamUrl: 'https://25443.live.streamtheworld.com/ROCK_RADIO_STAGEAAC_128.aac', homepageUrl: 'https://rockradiostage.cz/', logoUrl: null, votes: 999997, listeners: 0, builtIn: true }
 ];
 
 const els = {
@@ -66,7 +67,9 @@ function normalizeStation(item) {
 
 function availableStations(apiStations = []) {
   const byId = new Map();
-  [...BUILT_IN_STATIONS, ...customStations, ...apiStations].filter(station => isPlayableStream(station.streamUrl)).forEach(station => byId.set(station.id, station));
+  const builtInNames = new Set(BUILT_IN_STATIONS.map(station => station.name.trim().toLocaleLowerCase()));
+  const externalStations = apiStations.filter(station => !builtInNames.has(station.name.trim().toLocaleLowerCase()));
+  [...BUILT_IN_STATIONS, ...customStations, ...externalStations].filter(station => isPlayableStream(station.streamUrl)).forEach(station => byId.set(station.id, station));
   return [...byId.values()];
 }
 
